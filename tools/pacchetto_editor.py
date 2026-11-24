@@ -61,6 +61,8 @@ def copia_progetto(dest):
         if rel.split(os.sep)[0] in ESCLUSI or rel.startswith("dist"):
             continue
         for f in files:
+            if f.endswith((".zip", ".tpz", ".log")):      # downloads and logs of the build machine, never part of the editor
+                continue
             d = os.path.join(dest, rel, f)
             os.makedirs(os.path.dirname(d), exist_ok=True)
             shutil.copy2(os.path.join(radice, f), d)

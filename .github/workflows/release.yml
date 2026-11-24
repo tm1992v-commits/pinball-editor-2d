@@ -14,8 +14,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Godot 4.7.2
         run: |
-          curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
-          unzip -q godot.zip && mv Godot_v4.7.2-stable_linux.x86_64 /usr/local/bin/godot
+          curl -sSL -o "$RUNNER_TEMP/godot.zip" https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP" && sudo mv "$RUNNER_TEMP/Godot_v4.7.2-stable_linux.x86_64" /usr/local/bin/godot
       - name: Tests
         run: |
           godot --headless --path . --import

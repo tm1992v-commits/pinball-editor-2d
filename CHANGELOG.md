@@ -2,6 +2,10 @@
 
 All notable changes to the official Pinball Editor 2D. Versions follow `MAJOR.MINOR.PATCH`.
 
+## 0.26.2
+- Release packages fixed: the 0.26.1 packages contained by mistake a copy of the Godot download used by the
+  build machine (about 78 MB more, nothing else changed).
+
 ## 0.26.1
 - All public texts in English (repository documents, and the README, credits, build and AI instructions
   written by the editor into every released pinball).
