@@ -1,0 +1,12 @@
+[{"comando":"nuovo","modello":"base","nome":"Arena","forma":"arco"},
+ {"comando":"imposta_tavolo","campo":"descrizione","valore":"parte alta ad arco: 4 bumper a rombo con pozzo di gravità al centro, kickback nella corsia sinistra"},
+ {"comando":"aggiungi","tipo":"bumper","id":"bumper_alto","pos":[293,250],"valori":{"raggio":25}},
+ {"comando":"aggiungi","tipo":"bumper","id":"bumper_sx","pos":[208,335],"valori":{"raggio":25}},
+ {"comando":"aggiungi","tipo":"bumper","id":"bumper_dx","pos":[378,335],"valori":{"raggio":25}},
+ {"comando":"aggiungi","tipo":"bumper","id":"bumper_basso","pos":[293,420],"valori":{"raggio":25}},
+ {"comando":"aggiungi","tipo":"campi","id":"pozzo","pos":[293,335],"valori":{"tipo":"pozzo","raggio":45,"forza":1800,"acceso":true}},
+ {"comando":"aggiungi","tipo":"spinner","id":"spinner_sx","pos":[120,520],"valori":{"angolo":0.5,"larghezza":40}},
+ {"comando":"aggiungi","tipo":"spinner","id":"spinner_dx","pos":[466,520],"valori":{"angolo":-0.5,"larghezza":40}},
+ {"comando":"aggiungi","tipo":"kickback","id":"kickback_sx","pos":[47,1000],"valori":{"dim":[40,12]}},
+ {"comando":"aggiungi","tipo":"inserti","id":"luce_kickback","pos":[47,950],"valori":{"dim":[14,14],"colore":[1,0.3,0.2]}},
+ {"comando":"aggiungi","tipo":"inserti","id":"luce_centro","pos":[293,680],"valori":{"dim":[24,24],"colore":[0.4,0.8,1]}}]

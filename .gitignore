@@ -1,0 +1,7 @@
+.godot/
+build/
+gioco/
+progetti/
+libreria_elementi/
+dist/
+*.tmp

@@ -1,0 +1,226 @@
+{
+"formato": 1,
+"tavolo": {
+"bersagli": [{
+"abbattibile": false,
+"angolo": -0.98,
+"dim": Vector2(24, 8),
+"gruppo": "molle",
+"id": "molla_sx_1",
+"molla": true,
+"molla_verso": Vector2(330, 320),
+"pos": Vector2(108, 540)
+}, {
+"abbattibile": false,
+"angolo": -0.98,
+"dim": Vector2(24, 8),
+"gruppo": "molle",
+"id": "molla_sx_2",
+"molla": true,
+"molla_verso": Vector2(330, 320),
+"pos": Vector2(133, 523)
+}, {
+"abbattibile": false,
+"angolo": 0.98,
+"dim": Vector2(24, 8),
+"gruppo": "molle",
+"id": "molla_dx_1",
+"molla": true,
+"molla_verso": Vector2(330, 320),
+"pos": Vector2(552, 540)
+}, {
+"abbattibile": false,
+"angolo": 0.98,
+"dim": Vector2(24, 8),
+"gruppo": "molle",
+"id": "molla_dx_2",
+"molla": true,
+"molla_verso": Vector2(330, 320),
+"pos": Vector2(527, 523)
+}],
+"bocca_rampa": 40.0,
+"buche": [],
+"bumper": [{
+"id": "bumper_1",
+"pos": Vector2(230, 280),
+"raggio": 26.0,
+"zona": "bumper"
+}, {
+"id": "bumper_2",
+"pos": Vector2(330, 250),
+"raggio": 26.0,
+"zona": "bumper"
+}, {
+"id": "bumper_3",
+"pos": Vector2(430, 280),
+"raggio": 26.0,
+"zona": "bumper"
+}, {
+"id": "bumper_4",
+"pos": Vector2(280, 370),
+"raggio": 26.0,
+"zona": "bumper"
+}, {
+"id": "bumper_5",
+"pos": Vector2(380, 370),
+"raggio": 26.0,
+"zona": "bumper"
+}],
+"campi": [{
+"acceso": true,
+"forza": 6000.0,
+"id": "magnete",
+"pos": Vector2(330, 620),
+"raggio": 40.0,
+"tipo": "magnete"
+}],
+"campo": 651.0,
+"cancello": [Vector2(599.79297, 96.30559), Vector2(630.918, 65.20528)],
+"captive": [],
+"cartella_grafica": "res://grafica/_editor/",
+"centro_x": 332.5,
+"colori": {
+"livello": Color(0.25, 0.2, 0.3, 1),
+"palette": Color(0.97, 0.96, 0.94, 1),
+"piano": Color(0.12, 0.13, 0.16, 1),
+"piano_2": Color(0.16, 0.17, 0.2, 1),
+"primario": Color(1, 0.7, 0.3, 1),
+"rampe": {},
+"secondario": Color(0.4, 0.75, 1, 1)
+},
+"descrizione": "tavolo largo 700 mm: 5 bumper, due file di bersagli a molla, magnete al centro",
+"deviatori": [],
+"dimensioni": Vector2(700, 1240),
+"elastici": [],
+"fionde": [{
+"id": "fionda_sx",
+"punti": [Vector2(183.5, 905), Vector2(178.5, 1006), Vector2(235.5, 1038)]
+}, {
+"id": "fionda_dx",
+"punti": [Vector2(516.5, 905), Vector2(522.5, 1006), Vector2(461.5, 1038)]
+}],
+"forma": {
+"larghezza": 700.0,
+"r_dx": 220.0,
+"r_sx": 220.0
+},
+"inserti": [{
+"colore": Color(0.8, 0.5, 1, 1),
+"dim": Vector2(20, 20),
+"dir": Vector2(0, -1),
+"forma": "tondo",
+"id": "luce_magnete",
+"pos": Vector2(330, 620)
+}],
+"kickback": [],
+"lancio": {
+"canale": {
+"angolo_uscita": -0.785,
+"centro": Vector2(476, 220),
+"r_dentro": 175.0,
+"r_fuori": 220.0
+},
+"corsia_x": 651.0,
+"pos": Vector2(673.5, 1200)
+},
+"livelli": {},
+"luci": "res://tavoli/base/luci_tavolo.gd",
+"muri": [{
+"altezza": 55.0,
+"id": "sponda",
+"punti": PackedVector2Array(0, 1300, 0, 220, 0, 220, 1.8821259, 191.28424, 7.4963226, 163.05981, 16.746506, 135.80965, 29.474411, 110, 45.462265, 86.07248, 64.43651, 64.43651, 86.07248, 45.462265, 110, 29.474411, 135.80965, 16.746506, 163.05981, 7.4963226, 191.28424, 1.8821259, 220, 0, 476, 0, 497.56378, 1.0593567, 518.91986, 4.227249, 539.8626, 9.473129, 560.19037, 16.746506, 579.7073, 25.97731, 598.22546, 37.07669, 615.5665, 49.9377, 631.5635, 64.43651, 646.0623, 80.43349, 658.92334, 97.77454, 670.0227, 116.29272, 679.2535, 135.80965, 686.52686, 156.13737, 691.77277, 177.08012, 694.9407, 198.43623, 696, 220, 696, 1300),
+"tipo": "legno"
+}, {
+"altezza": 30.0,
+"id": "corsia_lancio",
+"punti": PackedVector2Array(651, 1300, 651, 220, 651, 220, 650.46106, 206.27661, 648.84766, 192.63773, 646.1696, 179.16739, 642.4435, 165.94853, 637.69226, 153.06259, 631.9451, 140.58891, 625.2375, 128.60434, 617.6107, 117.182686, 609.11176, 106.39428, 599.79297, 96.30559),
+"tipo": "metallo"
+}, {
+"altezza": 10.0,
+"id": "fondo_lancio",
+"punti": PackedVector2Array(651, 1215, 696, 1215),
+"tipo": "metallo"
+}, {
+"altezza": 20.0,
+"id": "grembiule_sx",
+"punti": PackedVector2Array(0, 1047.3334, 278.5, 1233, 278.5, 1300),
+"tipo": "metallo"
+}, {
+"altezza": 20.0,
+"id": "grembiule_dx",
+"punti": PackedVector2Array(651, 1074.5635, 421.5, 1233, 421.5, 1300),
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "guida_27",
+"punti": PackedVector2Array(127.5, 898, 127.5, 1066, 238.5, 1119),
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "guida_28",
+"punti": PackedVector2Array(572.5, 898, 572.5, 1066, 460.5, 1119),
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "guida_colonna",
+"punti": PackedVector2Array(651, 852, 572.5, 898),
+"tipo": "metallo"
+}, {
+"altezza": 15.0,
+"id": "riempimento_dx",
+"punti": PackedVector2Array(577.5, 905, 646, 870, 646, 1090, 577.5, 1075, 577.5, 905),
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "muro_molle_sx",
+"punti": PackedVector2Array(90, 560, 150, 520, 118, 498, 90, 560),
+"senso_unico": false,
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "muro_molle_dx",
+"punti": PackedVector2Array(570, 560, 510, 520, 542, 498, 570, 560),
+"senso_unico": false,
+"tipo": "metallo"
+}],
+"nome": "largo",
+"paletta_angoli": Vector2(0.5, -0.5),
+"palette": [{
+"comando": "paletta_sx",
+"id": "sx",
+"lunghezza": 84.0,
+"perno": Vector2(241.5, 1130),
+"verso": 1.0
+}, {
+"comando": "paletta_dx",
+"id": "dx",
+"lunghezza": 84.0,
+"perno": Vector2(457.5, 1130),
+"verso": -1.0
+}],
+"passaggi": [],
+"porte": [{
+"aperta": true,
+"id": "perno",
+"punti": PackedVector2Array(324.5, 1186, 374.5, 1186),
+"tipo": "gomma"
+}],
+"raggio_pallina": 13.5,
+"rampe": [],
+"rampe_solide": false,
+"regole": "res://tavoli/base/regole_tavolo.gd",
+"sensori": [{
+"dim": Vector2(42, 8),
+"dir": Vector2(0, 1),
+"id": "corsia_27",
+"pos": Vector2(152.5, 960)
+}, {
+"dim": Vector2(42, 8),
+"dir": Vector2(0, 1),
+"id": "corsia_28",
+"pos": Vector2(546.5, 960)
+}],
+"spinner": [],
+"titolo": "LARGO"
+}
+}

@@ -1,0 +1,29 @@
+name: Release
+# When a maintainer pushes a version tag (vX.Y.Z): tests, then the ready-to-use editor packages for Windows and
+# Linux are built and attached to a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot 4.7.2
+        run: |
+          curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
+          unzip -q godot.zip && mv Godot_v4.7.2-stable_linux.x86_64 /usr/local/bin/godot
+      - name: Tests
+        run: |
+          godot --headless --path . --import
+          godot --headless --path . res://tests/test_editor.tscn | tee e.log; grep -q " 0 FALLITI" e.log
+          godot --headless --fixed-fps 60 --path . res://tests/test_motore.tscn | tee m.log; grep -q " 0 FALLITI" m.log
+      - name: Build the editor packages (Windows, Linux)
+        run: python3 tools/pacchetto_editor.py "${GITHUB_REF_NAME#v}" dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip --title "Pinball Editor 2D $GITHUB_REF_NAME" --notes "See CHANGELOG.md."

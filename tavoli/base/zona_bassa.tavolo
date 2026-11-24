@@ -1,0 +1,92 @@
+{
+"formato": 1,
+"tavolo": {
+"bocca_rampa": 40.0,
+"centro_x": 300.0,
+"fionde": [{
+"id": "fionda_sx",
+"punti": [Vector2(151, 905), Vector2(146, 1006), Vector2(203, 1038)]
+}, {
+"id": "fionda_dx",
+"punti": [Vector2(484, 905), Vector2(490, 1006), Vector2(429, 1038)]
+}],
+"muri": [{
+"altezza": 55.0,
+"id": "sponda",
+"punti": PackedVector2Array(0, 1300, 0, 120, 0, 120, 1.0266113, 104.33686, 4.0889053, 88.94171, 9.13446, 74.07799, 16.07695, 60, 24.7976, 46.94863, 35.147186, 35.147186, 46.94863, 24.7976, 60, 16.07695, 74.07799, 9.13446, 88.94171, 4.0889053, 104.33686, 1.0266113, 120, 0, 401, 0, 423.54395, 1.1075134, 445.8708, 4.419388, 467.76547, 9.903717, 489.01718, 17.50772, 509.42126, 27.158096, 528.7811, 38.761993, 546.91046, 52.207596, 563.6345, 67.36545, 578.7924, 84.089554, 592.23804, 102.21884, 603.8419, 121.57875, 613.4923, 141.98282, 621.0963, 163.23453, 626.5806, 185.12923, 629.89246, 207.45605, 631, 230, 631, 1300),
+"tipo": "legno"
+}, {
+"altezza": 30.0,
+"id": "corsia_lancio",
+"punti": PackedVector2Array(586, 1300, 586, 230, 586, 230, 585.4303, 215.49242, 583.7247, 201.07417, 580.8936, 186.83409, 576.9546, 172.85988, 571.93176, 159.2376, 565.85626, 146.05115, 558.7654, 133.38173, 550.70276, 121.30741, 541.71814, 109.90253, 531.8668, 99.237335),
+"tipo": "metallo"
+}, {
+"altezza": 10.0,
+"id": "fondo_lancio",
+"punti": PackedVector2Array(586, 1215, 631, 1215),
+"tipo": "metallo"
+}, {
+"altezza": 20.0,
+"id": "grembiule_sx",
+"punti": PackedVector2Array(0, 1069, 246, 1233, 246, 1300),
+"tipo": "metallo"
+}, {
+"altezza": 20.0,
+"id": "grembiule_dx",
+"punti": PackedVector2Array(586, 1097, 389, 1233, 389, 1300),
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "guida_27",
+"punti": PackedVector2Array(95, 898, 95, 1066, 206, 1119),
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "guida_28",
+"punti": PackedVector2Array(540, 898, 540, 1066, 428, 1119),
+"tipo": "metallo"
+}, {
+"altezza": 25.0,
+"id": "guida_colonna",
+"punti": PackedVector2Array(586, 852, 540, 898),
+"tipo": "metallo"
+}, {
+"altezza": 15.0,
+"id": "riempimento_dx",
+"punti": PackedVector2Array(545, 905, 581, 870, 581, 1090, 545, 1075, 545, 905),
+"tipo": "metallo"
+}],
+"paletta_angoli": Vector2(0.5, -0.5),
+"palette": [{
+"comando": "paletta_sx",
+"id": "sx",
+"lunghezza": 84.0,
+"perno": Vector2(209, 1130),
+"verso": 1.0
+}, {
+"comando": "paletta_dx",
+"id": "dx",
+"lunghezza": 84.0,
+"perno": Vector2(425, 1130),
+"verso": -1.0
+}],
+"porte": [{
+"aperta": true,
+"id": "perno",
+"punti": PackedVector2Array(292, 1186, 342, 1186),
+"tipo": "gomma"
+}],
+"raggio_pallina": 13.5,
+"sensori": [{
+"dim": Vector2(42, 8),
+"dir": Vector2(0, 1),
+"id": "corsia_27",
+"pos": Vector2(120, 960)
+}, {
+"dim": Vector2(42, 8),
+"dir": Vector2(0, 1),
+"id": "corsia_28",
+"pos": Vector2(514, 960)
+}]
+}
+}
