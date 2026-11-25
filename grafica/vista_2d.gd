@@ -981,8 +981,10 @@ func _disegna_rampe(n: Node2D) -> void:
 			om_sx.append(c[i] + nor[i] * m + off)
 			om_dx.append(c[i] - nor[i] * m + off)
 		if filo:
+			# ombra morbida dei fili sul piano (due passate: larga e chiara, stretta e più scura)
 			for o in [om_sx, om_dx]:
-				n.draw_polyline(o, Color(0, 0, 0, 0.28), 2.5, true)
+				n.draw_polyline(o, Color(0, 0, 0, 0.10), 6.0, true)
+				n.draw_polyline(o, Color(0, 0, 0, 0.20), 2.4, true)
 			_binario_cromato(n, c, nor, m, col)
 			continue
 		_striscia(n, om_sx, om_dx, Color(0, 0, 0, 0.22))
@@ -1061,27 +1063,57 @@ func _disegna_rampe(n: Node2D) -> void:
 			PittorePezzi.spinner(n, sp, PittorePezzi.colore("spinner", sp, desc), PittorePezzi.piatto(sp, desc), Transform2D.IDENTITY, false, PittorePezzi.altezza("spinner", sp))
 		PittorePezzi.disegna_immagine(n, sp, desc, PittorePezzi.ancora("spinner", sp, desc))
 
+## sottili e lucidi, niente contorni neri, poche
+## staffe trasversali ben distanziate (ogni 64 mm, più una all'inizio e una alla fine) con le viti alle punte.
+## Il colore della rampa tinge appena le staffe. Disegnato una volta sola (strato fisso).
 func _binario_cromato(n: Node2D, c: PackedVector2Array, nor: PackedVector2Array, m: float, col: Color) -> void:
-	var lung := 0.0
-	var prossima := 11.0
+	if c.size() < 2:
+		return
+	var luce_dir := Vector2(-0.6, -0.8)
+	var acciaio := Color(0.66, 0.68, 0.72)
+	var bordo := Color(0.18, 0.19, 0.22, 0.55)
+	# staffe: dove cadono lungo il binario (prima e ultima comprese)
+	var lung_tot := 0.0
 	for i in range(1, c.size()):
-		lung += c[i].distance_to(c[i - 1])
-		if lung >= prossima:
-			prossima = lung + 22.0
-			var u := PackedVector2Array([c[i] + nor[i] * m, c[i] + nor[i] * m * 0.42, c[i] - nor[i] * m * 0.42, c[i] - nor[i] * m])
-			n.draw_polyline(u, Color(0.04, 0.04, 0.06, 0.9), 2.6, true)
-			n.draw_polyline(u, col.darkened(0.2), 1.4, true)
-	for k in [-1.0, -0.42, 0.42, 1.0]:
-		var f := PackedVector2Array()
-		var luce := PackedVector2Array()
-		for i in c.size():
-			f.append(c[i] + nor[i] * m * k)
-			var verso := signf(nor[i].dot(Vector2(-0.6, -0.8)) + 0.001)
-			luce.append(c[i] + nor[i] * (m * k + verso * 0.6))
-		var sp := 2.6 if absf(k) > 0.5 else 2.0
-		n.draw_polyline(f, Color(0.04, 0.04, 0.06, 0.95), sp + 1.4, true)
-		n.draw_polyline(f, col, sp, true)
-		n.draw_polyline(luce, Color(1, 1, 1, 0.75), sp * 0.4, true)
+		lung_tot += c[i].distance_to(c[i - 1])
+	var passi := maxi(1, int(round(lung_tot / 64.0)))
+	var passo := lung_tot / float(passi)
+	var dove: Array = [0]
+	var acc := 0.0
+	var prossima := passo
+	for i in range(1, c.size()):
+		acc += c[i].distance_to(c[i - 1])
+		if acc >= prossima - 0.5 and i < c.size() - 1:
+			dove.append(i)
+			prossima += passo
+	dove.append(c.size() - 1)
+	# 1) fili sotto la pallina (più bassi: più scuri e sottili), poi staffe, poi sponde sopra
+	_filo_acciaio(n, c, nor, 0.0, 1.9, acciaio.darkened(0.22), bordo, luce_dir)
+	var staffa := acciaio.lerp(col, 0.18).darkened(0.08)
+	for i in dove:
+		var a: Vector2 = c[i] + nor[i] * m * 1.16
+		var b: Vector2 = c[i] - nor[i] * m * 1.16
+		n.draw_line(a, b, bordo, 3.6, true)
+		n.draw_line(a, b, staffa, 2.6, true)
+		n.draw_line(a + Vector2(0, -0.5), b + Vector2(0, -0.5), Color(1, 1, 1, 0.45), 0.8, true)
+		for v in [a, b]:
+			n.draw_circle(v, 2.1, bordo)
+			n.draw_circle(v, 1.6, staffa.lightened(0.15))
+			n.draw_circle(v + Vector2(-0.4, -0.4), 0.6, Color(1, 1, 1, 0.8))
+	_filo_acciaio(n, c, nor, m, 2.3, acciaio, bordo, luce_dir)
+	_filo_acciaio(n, c, nor, -m, 2.3, acciaio, bordo, luce_dir)
+
+## Un filo d'acciaio a distanza `off` dal centro: bordo leggero, corpo, riflesso dal lato della luce.
+func _filo_acciaio(n: Node2D, c: PackedVector2Array, nor: PackedVector2Array, off: float, sp: float, corpo: Color, bordo: Color, luce_dir: Vector2) -> void:
+	var f := PackedVector2Array()
+	var luce := PackedVector2Array()
+	for i in c.size():
+		f.append(c[i] + nor[i] * off)
+		var verso := signf(nor[i].dot(luce_dir) + 0.001)
+		luce.append(c[i] + nor[i] * (off + verso * sp * 0.22))
+	n.draw_polyline(f, bordo, sp + 1.0, true)
+	n.draw_polyline(f, corpo, sp, true)
+	n.draw_polyline(luce, Color(1, 1, 1, 0.85), sp * 0.38, true)
 
 ## Striscia piena tra due bordi (un poligono; se si incrocia nei tornanti, un quadrilatero per tratto).
 func _striscia(n: Node2D, a: PackedVector2Array, b: PackedVector2Array, col: Color) -> void:

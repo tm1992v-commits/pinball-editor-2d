@@ -85,7 +85,9 @@ tutto (pezzi tecnici, nome/id dei pezzi, direzione d'uscita delle buche, forza d
 perde niente cambiando.
 
 ## Come si FINISCE un muro, una rampa o un nastro (importante)
-Mentre disegni compare in alto sul tavolo una barra gialla con tre pulsanti:
+Mentre disegni compare una barra gialla con tre pulsanti, uno sotto l'altro (**novità 0.28.1**: sta **ferma** nello
+spazio vuoto **a lato del tavolo**, così non lo copre; se il tavolo riempie tutta la vista va in basso, nell'angolo
+lontano dal primo punto):
 - **✔ FINE**: il pezzo è fatto (oppure **clic destro**, **Invio** o **doppio clic**);
 - **✖ Annulla**: butta via il disegno (oppure **Esc**);
 - **↶ Togli l'ultimo punto**: se hai cliccato nel posto sbagliato.
@@ -125,7 +127,7 @@ Anche i **muri già esistenti** (zona bassa, sponde) si modificano così.
 3. Per cambiarle: scegli la rampa, **clicca un punto** e a destra scrivi l'**altezza** (0-120 mm). Oppure i
    pulsanti **Sale e riscende** o **Uscita sospesa** (finisce in alto a 32 mm e la pallina cade sul piano, per
    esempio sopra una corsia di ritorno).
-4. Nelle proprietà, **Tipo**: **rampa di plastica** oppure **binario a fili** (in gioco si vede diverso).
+4. Nelle proprietà, **Tipo**: **rampa di plastica** oppure **binario a fili** (in gioco si vede diverso). **Novità 0.28.2:** il binario a fili è disegnato «pulito»: fili d'acciaio lucidi, staffe ben distanziate con le viti, ombra leggera (si vede in GIOCA e con RENDERIZZA).
    (0.9.3) Opzioni prese dal nastro:
    - **Colore** della rampa (pulsante «Colore del tavolo» per tornare a quello normale) e **Frecce sul fondo**;
    - **TUTTA LA RAMPA → Altezza del punto più alto**: alzi o abbassi tutta la rampa, gli altri punti in proporzione;
@@ -189,6 +191,12 @@ c'è «Altezza» in modalità PRO.
    (si vede solo la tua immagine, con l'ombra sotto se il tavolo è in 3D).
 5. **Col mouse** (0.7.1): sul pezzo scelto compaiono due maniglie azzurre: il **rombo** al centro dell'immagine la
    **sposta**, il **quadratino** nell'angolo la **ingrandisce o rimpicciolisce** (proporzioni mantenute). Ctrl+Z annulla.
+   **Novità 0.27:** il **pallino azzurro sopra l'immagine** la **ruota**: trascinalo in cerchio (gradi scritti accanto;
+   tieni **Ctrl** per scatti di 15°). Se l'immagine è «al posto del disegno», gira tutto il pezzo con lei.
+   **Novità 0.28:** le due **maniglie bianche sui lati** cambiano **una misura sola**: quella a **destra** allarga o
+   stringe (solo larghezza), quella **sotto** allunga o accorcia (solo altezza); mentre trascini vedi le misure in mm.
+   Se immagine e collisione sono una cosa sola, si allunga anche la collisione (per i pezzi rotondi, come i bumper,
+   la collisione resta rotonda: cambia solo l'immagine).
    Oppure coi numeri: **Larghezza e altezza** (con «Mantieni le proporzioni»), **Spostamento dal centro**, **Rotazione**.
 6. **Togli immagine**: il pezzo torna col suo disegno. Tutto si annulla con Ctrl+Z.
 - Sulla **paletta** l'immagine gira insieme alla paletta.
@@ -202,6 +210,11 @@ ridotta a massimo 2048 px). **Togli fondo** per tornare al piano colorato.
 **Immagine sul piano** (pianeti, scritte, loghi, frecce dipinte): icona **Immagine** (in fondo agli strumenti) → clic
 sul tavolo dove la vuoi → a destra **Scegli immagine…**. Poi si usa come gli altri pezzi:
 - si **trascina col mouse**; **Ingrandisci / Rimpicciolisci** (tasti + e −), **Ruota 15°**, **Capovolgi**, **Duplica**;
+- **Novità 0.27, col mouse:** quando è scelta compaiono il contorno azzurro, il **quadratino** nell'angolo
+  (trascinalo = più grande o più piccola, proporzioni mantenute) e il **pallino** sopra (trascinalo in cerchio = ruota;
+  **Ctrl** = scatti di 15°). Ctrl+Z annulla;
+- **Novità 0.28:** **maniglie bianche sui lati**: a destra = solo più larga o più stretta, sotto = solo più alta o più
+  bassa (proporzioni libere). Bloccata col 🔒 si riprende col clic e si sblocca col pulsante **🔓 Sblocca**;
 - a destra: **Larghezza e altezza**, **Rotazione**, **Trasparenza** (1 = piena), **A specchio**;
   **Proporzioni dell'immagine** rimette le proporzioni giuste; in PRO **Sopra i pezzi** (altrimenti è dipinta sul piano,
   sotto bumper e palline).
@@ -222,8 +235,10 @@ e Raspberry userà queste immagini pronte (Fase «Esportazione»).
   **Ctrl+A** li sceglie tutti.
 - Trascinane uno: si spostano **tutti**.
 - A destra: **Duplica**, **Copia a specchio**, **Ingrandisci / Rimpicciolisci** (tasti + e −), **Capovolgi ↔ / ↕**
-  sul posto, **Ruota 15°**, **In riga**, **In colonna**, **Distanze uguali**, **Blocca** (non si sposta più per sbaglio;
-  si sblocca con doppio clic nella scheda **Pezzi**), **Elimina**.
+  sul posto, **Ruota 15°**, **In riga**, **In colonna**, **Distanze uguali**, **🔒 Blocca** (non si sposta più per sbaglio;
+  il clic sceglie prima i pezzi che ci sono sotto). **Novità 0.28:** un pezzo bloccato **si riseleziona col clic** dove
+  non c'è altro (non si sposta e non ha maniglie): a destra il pulsante diventa **🔓 Sblocca**. Vale anche il doppio clic
+  nella scheda **Pezzi**. **Elimina**.
 - **Ctrl+C** copia, **Ctrl+V** incolla **dove punta il mouse**.
 - Gli stessi pulsanti ci sono anche per un pezzo solo.
 

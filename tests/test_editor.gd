@@ -790,7 +790,91 @@ func _prova_mouse() -> void:
 	_prova("mouse: l'angolo ingrandisce l'immagine (proporzioni uguali)", d1.x > d0.x and is_equal_approx(d1.x, d1.y))
 	p.esegui({"comando": "annulla"})
 	_prova("mouse: annulla rimette la grandezza", Vector2(p.pezzo("bumper_1")["immagine"]["dim"]) == d0)
+	# v0.27: pallino di rotazione dell'immagine del pezzo
+	mi = v._maniglie_immagine()
+	_clic(v, mi[4], true)
+	_muovi(v, Vector2(mi[0]) + Vector2(80, 0))
+	_clic(v, Vector2(mi[0]) + Vector2(80, 0), false)
+	_prova("mouse v0.27: il pallino ruota l'immagine del pezzo (90°)", is_equal_approx(float(p.pezzo("bumper_1")["immagine"]["rot"]), PI / 2.0) and p.pezzo("bumper_1")["pos"] == Vector2(300, 400))
+	p.esegui({"comando": "annulla"})
+	_prova("mouse v0.27: annulla rimette la rotazione", is_zero_approx(float(p.pezzo("bumper_1")["immagine"].get("rot", 0.0))))
+	# v0.28: maniglie sui lati = solo larghezza / solo altezza
+	mi = v._maniglie_immagine()
+	var dl0: Vector2 = p.pezzo("bumper_1")["immagine"]["dim"]
+	_clic(v, mi[8], true)
+	_muovi(v, Vector2(mi[8]) + Vector2(15, 0))
+	_clic(v, Vector2(mi[8]) + Vector2(15, 0), false)
+	var dl1: Vector2 = p.pezzo("bumper_1")["immagine"]["dim"]
+	_prova("mouse v0.28: il lato destro allarga solo la larghezza", dl1.x > dl0.x + 20.0 and is_equal_approx(dl1.y, dl0.y))
+	mi = v._maniglie_immagine()
+	_clic(v, mi[9], true)
+	_muovi(v, Vector2(mi[9]) + Vector2(0, -10))
+	_clic(v, Vector2(mi[9]) + Vector2(0, -10), false)
+	var dl2: Vector2 = p.pezzo("bumper_1")["immagine"]["dim"]
+	_prova("mouse v0.28: il lato basso cambia solo l'altezza", dl2.y < dl1.y - 10.0 and is_equal_approx(dl2.x, dl1.x))
+	p.esegui({"comando": "annulla"})
+	p.esegui({"comando": "annulla"})
+	_prova("mouse v0.28: annulla rimette larghezza e altezza", Vector2(p.pezzo("bumper_1")["immagine"]["dim"]) == dl0)
 	p.esegui({"comando": "immagine", "id": "bumper_1", "togli": true})
+	# v0.27: immagine sul piano: quadratino = grandezza, pallino = rotazione
+	var r_deco := p.esegui({"comando": "aggiungi", "tipo": "decorazioni", "pos": [300, 700], "file": f_m})
+	v.seleziona(str(r_deco.get("id", "")))
+	var md: Array = v._maniglie_immagine()
+	_prova("mouse v0.27: l'immagine sul piano ha le maniglie", md.size() == 10 and bool(md[5]))
+	if md.size() == 10:
+		var dd0: Vector2 = md[2]["dim"]
+		_clic(v, md[1], true)
+		for k in 5:
+			_muovi(v, Vector2(md[1]) + Vector2(8, 8) * (k + 1))
+		_clic(v, Vector2(md[1]) + Vector2(40, 40), false)
+		var dd1: Vector2 = md[2]["dim"]
+		_prova("mouse v0.27: l'angolo ingrandisce l'immagine sul piano", dd1.x > dd0.x and is_equal_approx(dd1.x / dd1.y, dd0.x / dd0.y) and Vector2(md[2]["immagine"]["dim"]) == dd1)
+		md = v._maniglie_immagine()
+		_clic(v, md[4], true)
+		var ev_c := InputEventMouseMotion.new()
+		ev_c.position = v.px(Vector2(md[0]) + Vector2(50, -40))
+		ev_c.ctrl_pressed = true
+		v._gui_input(ev_c)
+		_clic(v, Vector2(md[0]) + Vector2(50, -40), false)
+		var ang := rad_to_deg(float(md[2].get("angolo", 0.0)))
+		_prova("mouse v0.27: il pallino ruota l'immagine sul piano, Ctrl a scatti di 15°", absf(ang) > 1.0 and is_zero_approx(fmod(absf(ang) + 0.001, 15.0) - 0.001))
+		_prova("mouse v0.27: ruotando l'immagine sul piano resta al suo posto", Vector2(md[2]["pos"]).distance_to(Vector2(300, 700)) < 0.01)
+		md = v._maniglie_immagine()
+		var dq0: Vector2 = md[2]["dim"]
+		_clic(v, md[9], true)
+		_muovi(v, Vector2(md[0]) + (Vector2(0, dq0.y * 0.5 + 30)).rotated(float(md[6])))
+		_clic(v, Vector2(md[0]) + (Vector2(0, dq0.y * 0.5 + 30)).rotated(float(md[6])), false)
+		var dq1: Vector2 = md[2]["dim"]
+		_prova("mouse v0.28: l'immagine sul piano si allunga solo in altezza", dq1.y > dq0.y + 40.0 and is_equal_approx(dq1.x, dq0.x) and Vector2(md[2]["immagine"]["dim"]) == dq1)
+		# v0.28: immagine bloccata: il clic la sceglie ancora, ma non si sposta e non ha maniglie; poi si sblocca
+		var idb := str(md[2]["id"])
+		p.esegui({"comando": "gruppo", "ids": [idb], "azione": "blocca", "valore": true})
+		v.seleziona("")
+		var pos_b: Vector2 = md[2]["pos"]
+		_clic(v, pos_b, true)
+		_muovi(v, pos_b + Vector2(30, 0))
+		_clic(v, pos_b + Vector2(30, 0), false)
+		_prova("mouse v0.28: l'immagine bloccata si riseleziona col clic", v.selezionato == idb)
+		_prova("mouse v0.28: l'immagine bloccata non si sposta e non ha maniglie", Vector2(p.pezzo(idb)["pos"]) == pos_b and v._maniglie_immagine().is_empty())
+		p.esegui({"comando": "gruppo", "ids": [idb], "azione": "blocca", "valore": false})
+		_prova("mouse v0.28: sbloccata ritornano le maniglie", v._maniglie_immagine().size() == 10)
+		p.esegui({"comando": "elimina", "id": md[2]["id"]})
+	# v0.28.1: la barra FINE sta FERMA (si deve poter cliccare) e, se c'è posto, fuori dal tavolo
+	v.da_inserire = "rampe"
+	_clic(v, Vector2(300, 600), true)
+	_clic(v, Vector2(300, 600), false)
+	v._piazza_barra()
+	var bar: Control = v._barra_disegno
+	var pos0 := bar.position
+	_muovi(v, Vector2(320, 610))
+	var ev_b := InputEventMouseMotion.new()
+	ev_b.position = bar.position + bar.size * 0.5
+	v._gui_input(ev_b)
+	_prova("v0.28.1: la barra FINE resta ferma quando il mouse ci va sopra", bar.visible and bar.position == pos0)
+	var r_tav := Rect2(v.px(Vector2.ZERO), v.px(Vector2(635, 1240)) - v.px(Vector2.ZERO))
+	var c_spazio := maxf(r_tav.position.x, v.size.x - r_tav.end.x) >= bar.size.x + 24.0
+	_prova("v0.28.1: con spazio a lato la barra non copre il tavolo", not c_spazio or not Rect2(bar.position, bar.size).intersects(r_tav))
+	v.annulla_disegno()
 	v.da_inserire = "muri"
 	_clic(v, Vector2(100, 200), true)
 	_clic(v, Vector2(100, 200), false)

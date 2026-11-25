@@ -1831,6 +1831,9 @@ func _aggiorna_pannello() -> void:
 
 ## Pulsanti che agiscono su tutti i pezzi scelti (anche uno solo).
 func _gruppo(azione: String, extra := {}) -> void:
+	if azione in ["sposta", "ruota", "scala", "capovolgi", "allinea", "distribuisci"] and vista.selezionati.any(func(i): return vista.bloccato(str(i))):
+		_avviso("🔒 Tra i pezzi scelti ce n'è uno bloccato: prima «🔓 Sblocca».")
+		return
 	var c := {"comando": "gruppo", "ids": vista.selezionati.duplicate(), "azione": azione}
 	c.merge(extra)
 	var r := progetto.esegui(c)
@@ -1867,7 +1870,12 @@ func _strumenti_pezzo(dove: Control, piu: bool) -> void:
 		_bottone(r5, "Distanze uguali ↕", func(): _gruppo("distribuisci", {"asse": "y"}), "Stessa distanza in verticale")
 	var r6 := HBoxContainer.new()
 	dove.add_child(r6)
-	_bottone(r6, "Blocca", func(): _gruppo("blocca", {"valore": true}), "Non si può più scegliere col mouse (si sblocca con doppio clic in Pezzi)")
+	# v0.28: se i pezzi scelti sono già bloccati il pulsante diventa «Sblocca» (prima si sbloccava solo da Pezzi)
+	if vista.selezionati.all(func(i): return vista.bloccato(str(i))):
+		var sb := _bottone(r6, "🔓 Sblocca", func(): _gruppo("blocca", {"valore": false}), "Si torna a spostare e ridimensionare col mouse")
+		sb.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
+	else:
+		_bottone(r6, "🔒 Blocca", func(): _gruppo("blocca", {"valore": true}), "Non si sposta più per sbaglio: il clic sceglie prima i pezzi sotto; per riprenderlo cliccalo dove non c'è altro, poi «Sblocca»")
 	var el := _bottone(r6, "Elimina", func(): _gruppo("elimina"), "Canc")
 	el.add_theme_color_override("font_color", Color(1, 0.5, 0.5))
 	# v0.19: salva il pezzo (con immagine, collisione e fisica) nella libreria
