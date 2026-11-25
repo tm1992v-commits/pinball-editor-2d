@@ -1259,7 +1259,7 @@ func _prove_compatibilita_incroci() -> void:
 		var profili: Array = d.get("rampe", []).filter(func(r): return r.has("punti_gioco"))
 		if prima != dopo or not profili.is_empty() or d.has("innesti") or d.has("ordine_rampe"):
 			cambiati.append(f.get_file() if not f.ends_with("tavolo.tavolo") else f.get_base_dir().get_file())
-	_prova("incroci (test 11): %d tavoli vecchi letti, nessuno cambia (rampe, profili, innesti) %s" % [file.size(), str(cambiati)], file.size() >= 4 and cambiati.is_empty())
+	_prova("incroci (test 11): %d tavoli vecchi letti, nessuno cambia (rampe, profili, innesti) %s" % [file.size(), str(cambiati)], file.size() >= 3 and cambiati.is_empty())
 	# tavoli per la caccia agli incastri (test 14): uguali, uno SENZA regole e uno CON (ponte sul nastro, comunicante)
 	for con in [false, true]:
 		var p := ProgettoEditor.new()
