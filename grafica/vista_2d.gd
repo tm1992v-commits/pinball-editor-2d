@@ -948,7 +948,19 @@ func _disegna_rampe(n: Node2D) -> void:
 	for nn in desc.get("nastri", []):
 		if CurveEditor.nastro_alto(nn):
 			CurveEditor.disegna_nastro(n, nn, func(q): return q, 1.0)
-	for ra in desc["rampe"]:
+	# v0.30: con gli incroci la rampa che passa sopra si disegna dopo quella che passa sotto
+	var rampe_in_ordine: Array = desc["rampe"]
+	if desc.get("ordine_rampe") is Array:
+		var per_id := {}
+		for ra0 in desc["rampe"]:
+			per_id[str(ra0.get("id", ""))] = ra0
+		rampe_in_ordine = []
+		for id0 in desc["ordine_rampe"]:
+			if per_id.has(str(id0)):
+				rampe_in_ordine.append(per_id[str(id0)])
+				per_id.erase(str(id0))
+		rampe_in_ordine.append_array(per_id.values())
+	for ra in rampe_in_ordine:
 		if ra.has("da_nastro"):
 			continue
 		if PittorePezzi.ha_immagine(ra):
@@ -957,7 +969,7 @@ func _disegna_rampe(n: Node2D) -> void:
 				continue
 		var col: Color = _colore_rampa.get(ra["id"], C_AZZURRO)
 		var grezzi: Array = []
-		for p in ra["punti"]:
+		for p in (ra["punti_gioco"] if ra.get("punti_gioco") is Array and not ra["punti_gioco"].is_empty() else ra["punti"]):
 			grezzi.append(_v3(p))
 		var pts: Array = Binario.levigato(grezzi)
 		var c := PackedVector2Array()
@@ -1210,6 +1222,9 @@ func _rett(n: Node2D, centro: Vector2, dim: Vector2, ang: float, col: Color) -> 
 	n.draw_set_transform(Vector2.ZERO)
 
 func _scritta(n: Node2D, testo: String, centro: Vector2, corpo: int, col: Color) -> void:
+	# v0.30: senza il font del tavolo (copia pubblica) si usa quello di base di Godot (prima: errore e niente scritta)
+	if _font == null:
+		_font = ThemeDB.fallback_font
 	var w := _font.get_string_size(testo, HORIZONTAL_ALIGNMENT_LEFT, -1, corpo).x
 	n.draw_string(_font, centro - Vector2(w * 0.5, -corpo * 0.35), testo, HORIZONTAL_ALIGNMENT_LEFT, -1, corpo, col)
 

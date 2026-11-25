@@ -116,7 +116,8 @@ func _ready() -> void:
 	for b in d["buche"]:
 		_crea_buca(b)
 	for r in d["rampe"]:
-		var bin := Binario.new(r["id"], r["punti"])
+		# Pinball Editor 2D v0.30: «punti_gioco» = la rampa con le salite e discese degli incroci (se ci sono)
+		var bin := Binario.new(r["id"], r["punti_gioco"] if r.get("punti_gioco") is Array and not r["punti_gioco"].is_empty() else r["punti"])
 		bin.livello = _liv(r)
 		bin.quota_inizio = quota_livello(bin.livello)
 		bin.livello_fine = int(r.get("livello_fine", 0))
@@ -146,6 +147,12 @@ func _ready() -> void:
 		_crea_sensore(s)
 	for dv in d.get("deviatori", []):
 		deviatori[dv["id"]] = bool(dv.get("aperto", false))
+	# Pinball Editor 2D v0.30: incroci COMUNICANTI (innesti a metà binario) con il loro deviatore
+	for inn in d.get("innesti", []):
+		if rampe.has(inn["a"]) and rampe.has(inn["b"]):
+			rampe[inn["a"]].innesti.append({"s": float(inn["sa"]), "verso": inn["b"], "s_dest": float(inn["sb"]), "id": inn["id"], "devia": str(inn.get("devia", "alterna"))})
+			rampe[inn["b"]].innesti.append({"s": float(inn["sb"]), "verso": inn["a"], "s_dest": float(inn["sa"]), "id": inn["id"], "devia": str(inn.get("devia", "alterna"))})
+			deviatori[inn["id"]] = str(inn.get("devia", "alterna")) == "sempre"
 	for po in d.get("porte", []):
 		_crea_porta(po)
 	for la in d.get("lame", []):
@@ -765,6 +772,7 @@ func _nuova_pallina(pos: Vector2) -> Pallina:
 		elif c.has_meta("lama"):
 			_colpo_lama(c))
 	b.binario_finito.connect(_su_binario_finito)
+	b.innesto_passato.connect(_su_innesto)
 	palline.append(b)
 	pallina_creata.emit(b)
 	return b
@@ -811,6 +819,23 @@ func _su_binario_finito(b: Pallina, bin: Binario, completato: bool) -> void:
 	else:
 		b.catena.clear()
 		_segnala("rampa_fallita", bin.nome, b._teletrasporto[0] if b.in_spostamento() else bin.punti[0])
+
+## v0.30: la pallina passa su un incrocio comunicante. Deviatore «aperto» = cambia strada. «alterna»: una pallina
+## per strada; «sempre» / «mai»: fisso; «comandato»: lo aprono e chiudono le missioni (imposta_deviatore).
+func _su_innesto(b: Pallina, bin: Binario, k: int) -> void:
+	var inn: Dictionary = bin.innesti[k]
+	var id := str(inn["id"])
+	var cambia := bool(deviatori.get(id, false))
+	match str(inn.get("devia", "alterna")):
+		"sempre":
+			cambia = true
+		"mai":
+			cambia = false
+		"alterna":
+			imposta_deviatore(id, not cambia)
+	if cambia and rampe.has(inn["verso"]):
+		b.cambia_binario(rampe[inn["verso"]], float(inn["s_dest"]))
+		_segnala("incrocio", id, bin.posizione(float(inn["s"])))
 
 ## Binario che segue `nome` (deviatore o "prosegue_in"); "" se la pallina scende sul piano.
 ## Pinball Editor 2D v0.9.2: un deviatore con "alterna" cambia strada dopo ogni pallina (una a destra, una a sinistra).
@@ -1329,7 +1354,7 @@ func _physics_process(delta: float) -> void:
 		# sicurezza 4: pallina di un piano rialzato uscita dalla sua zona → rimessa dentro, verso il centro del piano
 		if b.livello > 0 and not b.in_spostamento():
 			var zona = d.get("livelli", {}).get(b.livello, {}).get("zona", null)
-			if zona != null and not Geometry2D.is_point_in_polygon(pp, zona) and bool(d["livelli"][b.livello].get("bordo_aperto", false)):
+			if zona != null and not Geometry2D.is_point_in_polygon(pp, zona) and (bool(d["livelli"][b.livello].get("bordo_aperto", false)) or _da_un_varco(pp, d["livelli"][b.livello])):
 				# Pinball Editor 2D v0.9: piano col BORDO APERTO: la pallina che ne esce cade giù sul tavolo
 				var nome_piano := str(d["livelli"][b.livello].get("nome", ""))
 				b.imposta_livello(0)
@@ -1466,3 +1491,10 @@ func _campi_passo(delta: float) -> void:
 				else:
 					b.aggiungi_vel(dir * float(cp.get("lancio_vel", 900.0)))
 				_segnala("magnete_lancio", id, c)
+
+## Pinball Editor 2D v0.29: la pallina uscita dal piano è passata da un VARCO del bordo? (entro 30 mm dal varco)
+static func _da_un_varco(pp: Vector2, livello: Dictionary) -> bool:
+	for v in livello.get("varchi", []):
+		if Geometry2D.get_closest_point_to_segment(pp, v[0], v[1]).distance_to(pp) < 30.0:
+			return true
+	return false

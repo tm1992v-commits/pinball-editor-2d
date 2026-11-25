@@ -16,6 +16,9 @@ var quota_fine := 0.0                    # altezza grafica di quel livello
 var quota_inizio := 0.0
 var potenziale := PackedFloat32Array()   # energia potenziale di ogni punto (vedi _potenziale)
 var precedente: Binario = null          # binario che porta in questo (la pallina che torna indietro ci risale)
+## Pinball Editor 2D v0.30: INNESTI a metà binario (incroci «comunicanti»): [{"s": dove, "verso": nome del binario,
+## "s_dest": dove si entra in quello, "id": deviatore}]. La pallina che ci passa in avanti chiede al tavolo se cambiare.
+var innesti: Array = []
 ## mezza larghezza variabile, come frazioni della lunghezza [0..1] -> mezza larghezza (mm). Vuoto = rampa normale.
 var mezze_f := PackedFloat32Array()
 var mezze_v := PackedFloat32Array()

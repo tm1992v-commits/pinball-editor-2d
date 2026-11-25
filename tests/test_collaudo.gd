@@ -34,10 +34,18 @@ func _esegui() -> void:
 	img.fill(Color(0.9, 0.2, 0.8))
 	_img_prova = ProjectSettings.globalize_path("user://collaudo_immagine.png")
 	img.save_png(_img_prova)
+	# v0.30: SOLO_INCROCI=1 → solo le prove degli incroci (per lavorarci senza rifare tutto il collaudo)
+	if OS.get_environment("SOLO_INCROCI") == "1":
+		await _incroci_gioco()
+		print("\n==== COLLAUDO: %d OK, %d FALLITI ====" % [ok, falliti.size()])
+		get_tree().quit(0 if falliti.is_empty() else 1)
+		return
 	await _creazione_e_vista()
 	await _giocattoli()
 	await _bordi_e_luci()
 	await _funzioni()
+	await _varchi_piano()
+	await _incroci_gioco()
 	await _pannello()
 	print("\n==== COLLAUDO: %d OK, %d FALLITI ====" % [ok, falliti.size()])
 	for f in falliti:
@@ -409,6 +417,170 @@ func _scenari_piano(p: ProgettoEditor, id: String) -> void:
 	_prova(b6.livello == 0 and eventi.any(func(x): return str(x).begins_with("caduta_piano")), "piani: col bordo aperto la pallina cade giù sul tavolo")
 	t2.queue_free()
 	await get_tree().physics_frame
+
+## v0.29: VARCHI nel bordo del piano, nel gioco vero: dal varco la pallina scende; dal lato chiuso no; con la rampa
+## attaccata in discesa la pallina la prende; con quella in salita arriva sul piano.
+func _tavolo_prova(p: ProgettoEditor, nome: String) -> TavoloFisico:
+	var f := ProjectSettings.globalize_path("user://collaudo_%s.tavolo" % nome)
+	p.salva_prova(f)
+	var t := TavoloFisico.new(FileTavolo.leggi(f))
+	add_child(t)
+	eventi.clear()
+	t.evento.connect(func(tipo, eid, _q): eventi.append(tipo + ":" + eid))
+	await get_tree().physics_frame
+	return t
+
+func _varchi_piano() -> void:
+	var p := ProgettoEditor.new()
+	p.esegui({"comando": "nuovo", "modello": "base", "nome": "Varchi"})
+	var rp := p.esegui({"comando": "aggiungi", "tipo": "piani", "pos": [300, 400]})
+	var id: String = rp["id"]
+	var n := int(p.pezzo(id).get("livello", 0))
+	var rv := p.esegui({"comando": "varco", "id": id, "pos": [200, 400], "larghezza": 50, "metti": ""})
+	var pezzi: Array = p.desc["muri"].filter(func(m): return str(m.get("id", "")).begins_with(id + "@bordo"))
+	_prova(rv.get("ok", false) and pezzi.size() == 1 and (p.desc["livelli"][n]["varchi"] as Array).size() == 1, "varco piano: il bordo si apre (un pezzo di bordo, un varco nel motore)")
+	var t := await _tavolo_prova(p, "varco1")
+	var b1 := t.genera_pallina(Vector2(260, 400), Vector2(-700, 0))
+	b1.imposta_livello(n, t.quota_livello(n))
+	await _passi(90)
+	_prova(b1.livello == 0 and eventi.any(func(x): return str(x).begins_with("caduta_piano")), "varco piano: dal varco la pallina cade giù sul tavolo")
+	t.togli_tutte()
+	await _passi(3)
+	var b2 := t.genera_pallina(Vector2(340, 400), Vector2(700, 0))
+	b2.imposta_livello(n, t.quota_livello(n))
+	await _passi(90)
+	_prova(b2.livello == n, "varco piano: dal lato chiuso la pallina resta sul piano")
+	t.queue_free()
+	await get_tree().physics_frame
+	# rampa che SCENDE attaccata al varco
+	p.esegui({"comando": "chiudi_varco", "id": id, "indice": 0})
+	var rg := p.esegui({"comando": "varco", "id": id, "pos": [200, 400], "larghezza": 50, "metti": "rampa_giu"})
+	var rampa := p.pezzo(str(rg.get("id", "")))
+	_prova(not rampa.is_empty() and int(rampa.get("livello", 0)) == n, "varco piano: la rampa in discesa parte dal piano")
+	t = await _tavolo_prova(p, "varco2")
+	var b3 := t.genera_pallina(Vector2(270, 400), Vector2(-900, 0))
+	b3.imposta_livello(n, t.quota_livello(n))
+	var entra := await _aspetta("rampa_entrata:" + str(rg["id"]), 1.5)
+	await _passi(150)
+	_prova(entra and b3.livello == 0, "varco piano: la pallina prende la rampa dal varco e scende sul tavolo")
+	t.queue_free()
+	await get_tree().physics_frame
+	# rampa che SALE sul piano dal varco in basso
+	var rs := p.esegui({"comando": "varco", "id": id, "pos": [300, 475], "larghezza": 50, "metti": "rampa_su"})
+	var rampa2 := p.pezzo(str(rs.get("id", "")))
+	_prova(not rampa2.is_empty() and int(rampa2.get("livello_fine", 0)) == n, "varco piano: la rampa in salita finisce sul piano")
+	var inizio: Vector3 = rampa2["punti"][0]
+	var verso := (Vector2(rampa2["punti"][1].x, rampa2["punti"][1].y) - Vector2(inizio.x, inizio.y)).normalized()
+	t = await _tavolo_prova(p, "varco3")
+	var b4 := t.genera_pallina(Vector2(inizio.x, inizio.y) - verso * 50.0, verso * 2200.0)
+	await _passi(150)
+	_prova(b4.livello == n, "varco piano: dalla rampa in salita la pallina arriva sul piano")
+	t.queue_free()
+	await get_tree().physics_frame
+	p.esegui({"comando": "annulla"})
+	_prova((p.pezzo(id).get("varchi", []) as Array).size() == 1 and p.pezzo(str(rs["id"])).is_empty(), "varco piano: un solo «annulla» toglie varco e rampa insieme")
+
+## v0.30: INCROCI nel gioco vero. Test 1: un binario attraversa un nastro basso: senza regola la parte bassa della
+## rampa (solida) chiude il nastro; con «passa sopra» la pallina passa sotto sul nastro E percorre la rampa fino in fondo.
+## Test 2: una rampa passa sotto un'altra: la pallina la percorre tutta.
+func _nastro_passa(p: ProgettoEditor, nome: String) -> bool:
+	var t := await _tavolo_prova(p, nome)
+	var b := t.genera_pallina(Vector2(140, 560), Vector2(1100, 0))
+	var passato := false
+	var max_x := 0.0
+	for i in 150:
+		await get_tree().physics_frame
+		max_x = maxf(max_x, b.global_position.x)
+		if b.global_position.x > 420.0:
+			passato = true
+			break
+	print("   [%s] pallina sul nastro arriva a x = %.0f; pareti della rampa: %s" % [nome, max_x, str(t.pareti_rampe.map(func(pr): return [pr[0], pr[1], pr[2].map(func(l): return [Vector2(l[0]).round(), Vector2(l[l.size() - 1]).round()])]))])
+	t.queue_free()
+	await get_tree().physics_frame
+	return passato
+
+func _rampa_percorsa(p: ProgettoEditor, nome: String, id: String, da: Vector2, vel: Vector2) -> bool:
+	var t := await _tavolo_prova(p, nome)
+	t.genera_pallina(da, vel)
+	var ok := await _aspetta("rampa:" + id, 3.0)
+	t.queue_free()
+	await get_tree().physics_frame
+	return ok
+
+func _incroci_gioco() -> void:
+	var p := ProgettoEditor.new()
+	p.esegui({"comando": "nuovo", "modello": "base", "nome": "IncrociGioco"})
+	# nastro piatto orizzontale (corsia con due pareti) e binario a fili che lo attraversa, basso nell'incrocio
+	p.esegui({"comando": "aggiungi", "id": "corsia", "tipo": "nastri", "punti": [[110, 560], [470, 560]], "larghezza": 46})
+	p.esegui({"comando": "aggiungi", "id": "filo", "tipo": "rampe", "punti": [[320, 900], [320, 700], [320, 330]], "altezza_max": 30})
+	p.esegui({"comando": "imposta", "id": "filo", "campo": "stile", "valore": "filo"})
+	var chiave := ""
+	for v in p.desc.get("_incroci", []):
+		chiave = str(v["chiave"])
+	_prova(chiave == "corsia|filo#0", "incroci gioco: il binario e il nastro piatto si incrociano (%s)" % chiave)
+	var senza := await _nastro_passa(p, "inc0")
+	p.esegui({"comando": "incroci_regola", "id": "filo", "modo": "sopra"})
+	var z := 0.0
+	for v in p.desc.get("_incroci", []):
+		z = float(v["zb_gioco"])
+	var con := await _nastro_passa(p, "inc1")
+	_prova(not senza and con, "incroci gioco (test 1): con il binario basso il nastro è chiuso; «passa sopra» (%.0f mm) lo apre e la pallina passa sotto" % z)
+	_prova(await _rampa_percorsa(p, "inc2", "filo", Vector2(320, 950), Vector2(0, -2300)), "incroci gioco (test 1): la pallina percorre il binario rialzato fino in fondo")
+	# test 2: rampa che passa SOTTO un'altra rampa alta
+	var q := ProgettoEditor.new()
+	q.esegui({"comando": "nuovo", "modello": "base", "nome": "Sotto"})
+	q.esegui({"comando": "aggiungi", "id": "alta", "tipo": "rampe", "punti": [[120, 520], [320, 520], [540, 520]], "altezza_max": 70})
+	q.esegui({"comando": "aggiungi", "id": "bassa", "tipo": "rampe", "punti": [[320, 900], [320, 700], [320, 330]], "altezza_max": 50})
+	q.esegui({"comando": "incroci_regola", "id": "bassa", "modo": "sotto"})
+	var zz: Array = []
+	for v in q.desc.get("_incroci", []):
+		zz = [float(v["za_gioco"]), float(v["zb_gioco"]), str(v["conflitto"])]
+	_prova(zz.size() == 3 and zz[2] == "" and zz[1] <= zz[0] - 31.5, "incroci gioco (test 2): la rampa bassa scende sotto quella alta (%s)" % str(zz))
+	_prova(await _rampa_percorsa(q, "inc3", "bassa", Vector2(320, 950), Vector2(0, -2300)), "incroci gioco (test 2): la pallina percorre tutta la rampa che passa sotto")
+	_prova(await _rampa_percorsa(q, "inc4", "alta", Vector2(70, 520), Vector2(2300, 0)), "incroci gioco (test 2): e anche quella che passa sopra")
+	# test 3 e 4: due rampe alla STESSA ALTEZZA. X = ognuna resta sulla sua strada; comunicanti = deviatore
+	var x := ProgettoEditor.new()
+	x.esegui({"comando": "nuovo", "modello": "base", "nome": "Stessa"})
+	x.esegui({"comando": "aggiungi", "id": "ra", "tipo": "rampe", "punti": [[120, 760], [320, 520], [520, 280]], "altezza_max": 45})
+	x.esegui({"comando": "aggiungi", "id": "rb", "tipo": "rampe", "punti": [[520, 760], [320, 520], [120, 280]], "altezza_max": 45})
+	x.esegui({"comando": "incrocio", "chiave": "ra|rb#0", "modo": "stesso"})
+	var dir_a := (Vector2(320, 520) - Vector2(120, 760)).normalized()
+	var parte := Vector2(120, 760) - dir_a * 45.0
+	_prova(await _dove_finisce(x, "inc5", parte, dir_a * 2300.0) == "ra", "incroci gioco (test 3): incrocio a X, la pallina resta sulla sua rampa")
+	x.esegui({"comando": "incrocio", "chiave": "ra|rb#0", "modo": "unito", "devia": "sempre"})
+	_prova(not x.desc.get("innesti", []).is_empty(), "incroci gioco (test 4): l'incrocio comunicante diventa un innesto nel motore")
+	_prova(await _dove_finisce(x, "inc6", parte, dir_a * 2300.0) == "rb", "incroci gioco (test 4): comunicanti, deviatore «sempre»: la pallina cambia strada")
+	x.esegui({"comando": "incrocio", "chiave": "ra|rb#0", "devia": "alterna"})
+	var t := await _tavolo_prova(x, "inc7")
+	var finiti: Array = []
+	for giro in 2:
+		eventi.clear()
+		t.genera_pallina(parte, dir_a * 2300.0)
+		for i in 360:
+			await get_tree().physics_frame
+			if eventi.has("rampa:ra") or eventi.has("rampa:rb"):
+				break
+		finiti.append("ra" if eventi.has("rampa:ra") else ("rb" if eventi.has("rampa:rb") else "?"))
+		t.togli_tutte()
+		await _passi(5)
+	t.queue_free()
+	await get_tree().physics_frame
+	_prova(finiti == ["ra", "rb"], "incroci gioco (test 4): deviatore «alterna»: una pallina per strada %s" % str(finiti))
+
+func _dove_finisce(p: ProgettoEditor, nome: String, da: Vector2, vel: Vector2) -> String:
+	var t := await _tavolo_prova(p, nome)
+	t.genera_pallina(da, vel)
+	var dove := "?"
+	for i in 360:
+		await get_tree().physics_frame
+		for e in eventi:
+			if str(e).begins_with("rampa:"):
+				dove = str(e).trim_prefix("rampa:")
+		if dove != "?":
+			break
+	t.queue_free()
+	await get_tree().physics_frame
+	return dove
 
 func _aspetta(ev: String, max_s := 1.5) -> bool:
 	for i in int(max_s * 60.0):

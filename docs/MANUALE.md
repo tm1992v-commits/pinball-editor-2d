@@ -22,7 +22,8 @@
 | Cosa vuoi fare | Come |
 |---|---|
 | Ingrandire / rimpicciolire | **rotella** del mouse (ingrandisce dove punti) |
-| Spostare la vista | tieni premuto il **tasto destro** (o la rotella) e trascina |
+| Spostare la vista | tieni premuto il **tasto destro** (o la rotella) e trascina, oppure usa le **barre di scorrimento** a destra e in basso (**novità 0.29**) |
+| Vista ferma | (**novità 0.29**) scegliendo un altro pezzo la vista **non torna più indietro**: resta dove l'hai messa |
 | Griglia | interruttore **«Griglia e aggancio 5 mm»**: i pezzi si posizionano a scatti di 5 mm. Spegnilo per muoverli liberamente |
 
 ## 4. Creare un tavolo nuovo
@@ -73,7 +74,10 @@ In **PRO** in più: Paletto di gomma, Kickback, Pozzo di gravità / magnete.
 | Scegliere un pezzo | clic sopra (diventa giallo). Oppure scheda **Pezzi** in basso → clic sul nome |
 | Spostarlo | trascinalo col mouse, oppure **frecce** della tastiera (1 mm; con **Maiusc** 10 mm) |
 | Cambiare misure e opzioni | a destra, nelle **Proprietà**: scrivi il numero o usa le freccette |
-| Ruotarlo | pulsante **Ruota 15°**, oppure tasto **R** (Maiusc+R al contrario). Per un angolo preciso: campo «Rotazione» |
+| Ruotarlo, ingrandirlo, allargarlo **col mouse** (**novità 0.29**) | sul pezzo scelto compaiono le **maniglie gialle**: **pallino sopra** = ruota (con **Ctrl** a scatti di 15°), **quadratino nell'angolo** = più grande o più piccolo, **maniglia a destra** = più largo o stretto, **maniglia sotto** = più lungo o corto. Valgono per tutti i pezzi (cancelli, bersagli, spinner, sensori, luci, muri, rampe…), solo quelle che servono: il bumper tondo per esempio non ruota. Ogni trascinamento = un solo «Annulla» |
+| Ruotarlo a scatti | pulsante **Ruota 15°**, oppure tasto **R** (Maiusc+R al contrario). Per un angolo preciso: campo «Rotazione» |
+| Scegliere un colore | clic sul colore: si apre la **tavolozza**. **Novità 0.29:** si **sposta** trascinandola dalla barra in alto («Colore»), si riapre dove l'hai lasciata e sotto mostra i **colori recenti** (gli ultimi 16, gli stessi in tutte le tavolozze finché l'editor resta aperto) |
+| Mettere tante luci uguali | (**novità 0.29**) una **luce nuova** nasce con **forma, misura e colore dell'ultima** che hai cambiato (finché l'editor resta aperto) |
 | Copiarlo | **Duplica** (o **Ctrl+D**): la copia compare spostata di 3 cm |
 | Copiarlo dall'altra parte | **⇋ Copia a specchio** (o **Ctrl+M**): stesso pezzo, simmetrico rispetto al centro tra le palette. Per le palette inverte anche il lato e il tasto |
 | Toglierlo | **Elimina** (o tasto **Canc**) |
@@ -118,6 +122,51 @@ curvi la linea passa morbida, così un'orbita o un arco si fanno con 3-4 punti.
 - **Isola**: blocco chiuso con i bordi curvi.
 
 Anche i **muri già esistenti** (zona bassa, sponde) si modificano così.
+
+## 7b2. ✂ Aprire un VARCO in un muro (novità 0.29)
+Per togliere un pezzo di muro e metterci un **cancelletto**, uno **spinner** o un **bersaglio**, senza ridisegnare il muro:
+1. Scegli il muro. A destra, nella sezione **✂ APRI UN VARCO NEL MURO**, scegli **cosa mettere nel varco**: niente,
+   cancelletto, spinner o bersaglio. La **larghezza** si imposta da sola (46, 38 o 24 mm) e puoi cambiarla.
+2. Premi **✂ Apri il varco: poi clicca sul muro**.
+3. Passa col mouse sopra un muro qualsiasi: la parte **ROSSA** è quella che si toglie (con la misura in mm).
+4. **Clic**: il muro si apre lì e il pezzo scelto entra nel varco, **largo come il varco e girato come il muro**.
+   Funziona anche sui tratti **curvi**. Un muro aperto diventa due muri; un muro chiuso (isola, blocco) si apre e resta uno.
+5. Se il verso del cancelletto è sbagliato, giralo col **pallino** di rotazione (Ctrl = scatti di 15°: due scatti di 90°).
+   Sbagliato? **Annulla** (Ctrl+Z) rimette tutto com'era in un colpo solo. **Esc** = smetti senza tagliare.
+
+**Varco nel BORDO di un PIANO RIALZATO** (novità 0.29): disegna il piano col bordo chiuso, sceglilo e nella sezione
+**✂ VARCHI NEL BORDO DEL PIANO** scegli cosa attaccare: **niente** (da lì la pallina scende giù sul tavolo), **rampa
+che SCENDE**, **rampa che SALE**, **nastro che SCENDE**, **nastro che SALE**. Premi **✂ Apri il varco** e clicca sul
+bordo: la parte **rossa** si toglie, la **freccia verde** mostra il pezzo attaccato. Il pezzo nasce corto e dritto (parte
+dentro il piano ed esce di 17 cm): poi lo **allunghi e pieghi coi suoi quadratini** come ogni rampa o nastro. Ogni
+varco è nell'elenco del pannello con il pulsante **Chiudi** (il bordo torna intero; il pezzo attaccato resta).
+Provato in gioco: dal varco la pallina scende, dal lato chiuso resta sopra, prende la rampa e sale dall'altra.
+
+## 7b3. INCROCI tra rampe, binari a fili e nastri (novità 0.30)
+**Regola: l'automatico propone, tu decidi.** Le altezze che disegni non vengono mai cambiate: le salite e discese per
+gli incroci sono un «profilo di gioco» in più (la pallina e il disegno del gioco usano quello).
+1. **Regola della rampa**: scegli una rampa, un binario o un nastro → sezione **INCROCI** → «Quando incontra un'altra
+   rampa, un binario o un nastro»: **niente di automatico** (come prima), **passa SOPRA** (si alza da sola dove serve),
+   **passa SOTTO** (si abbassa), **si incrocia alla STESSA ALTEZZA**. Con sopra/sotto puoi regolare lo spazio (32 mm =
+   pallina giusta), la lunghezza della salita e il tratto in piano (minimo: largo quanto l'altro percorso).
+2. **Segnalini sul tavolo**, uno per incrocio: **blu col ponte** = uno passa sopra l'altro · **verde ✚** = stessa
+   altezza · **viola ⇄** = comunicanti · **rosso !** = da decidere (es. tutte e due vogliono passare sopra: l'editor
+   non sceglie al posto tuo) · **grigio ?** = nessuna regola. Bordo **giallo** = deciso a mano, **arancio** = bloccato.
+3. **Clic sul segnalino** = pannello dell'incrocio: le due altezze (disegnata → nel gioco), come è deciso, e le scelte
+   solo per quell'incrocio: «A passa sopra / sotto», «B passa sopra / sotto», **Stessa altezza** (ognuna resta sulla sua
+   strada), **⇄ Comunicanti** (la pallina può cambiare strada; deviatore **alterna**, **sempre**, **mai** o **comandato
+   dalle missioni**). Puoi scrivere la **quota a mano**, **bloccare** l'incrocio e premere **↺ Torna automatico**.
+4. Le scelte fatte a mano **restano** anche se cambi la regola della rampa o sposti i pezzi. «Torna automatico» nella
+   sezione della rampa dice quante scelte perdi.
+5. **CONTROLLA** dice tutto in tre colori: **rosso** = errore fisico, **arancio** = da controllare, **azzurro** =
+   informazione. Clic sulla riga = ti porta al punto e apre l'incrocio. Se una tua scelta è problematica (quota troppo
+   bassa, salita troppo ripida) l'editor **la tiene** e te lo dice: decidi tu.
+6. **Piani rialzati**: se una rampa attraversa il bordo chiuso di un piano, il pannello del piano ti **propone** il varco
+   («✔ Apri i varchi proposti»).
+Provato in gioco: binario sopra un nastro (la pallina passa sotto sul nastro e percorre il binario), rampa sotto
+un'altra, incrocio a X (ognuna resta sulla sua), comunicanti con deviatore «sempre» e «alterna».
+Limiti di oggi: i **nastri** non cambiano altezza da soli (si alza o abbassa l'altro percorso); nell'incrocio a X le
+sponde nel disegno non si aprono (nel gioco la pallina passa lo stesso, ognuna sul suo binario).
 
 ## 7c. Rampe e binari a fili
 1. Icona **Rampa**, poi clic sull'**IMBOCCO** (dove la pallina entra: il punto a terra, rivolto verso le palette), poi
@@ -197,6 +246,9 @@ c'è «Altezza» in modalità PRO.
    stringe (solo larghezza), quella **sotto** allunga o accorcia (solo altezza); mentre trascini vedi le misure in mm.
    Se immagine e collisione sono una cosa sola, si allunga anche la collisione (per i pezzi rotondi, come i bumper,
    la collisione resta rotonda: cambia solo l'immagine).
+   **Novità 0.29:** se l'immagine è più grande del tavolo (es. la bozza intera sul piano), le maniglie che sarebbero
+   fuori dallo schermo compaiono **sul bordo della vista**, e funzionano lo stesso. Se l'immagine è **bloccata**
+   (pulsante «🔓 Sblocca» nel pannello) non ha maniglie: prima sbloccala.
    Oppure coi numeri: **Larghezza e altezza** (con «Mantieni le proporzioni»), **Spostamento dal centro**, **Rotazione**.
 6. **Togli immagine**: il pezzo torna col suo disegno. Tutto si annulla con Ctrl+Z.
 - Sulla **paletta** l'immagine gira insieme alla paletta.

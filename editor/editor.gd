@@ -4,7 +4,7 @@
 ## diario. Tutto passa dai comandi di ProgettoEditor (gli stessi che usa l'AI).
 extends Control
 
-const VERSIONE := "0.16"
+const VERSIONE := "0.30"
 const CARTELLA_PROGETTI := "res://../progetti"
 
 var progetto := ProgettoEditor.new()
@@ -1682,6 +1682,9 @@ func _aggiorna_pannello() -> void:
 	if _cz_aperto and vista.selezionato == "":
 		_pannello_cz()
 		return
+	if vista.incrocio_scelto != "" and vista.selezionato == "":
+		_pannello_incrocio(vista.incrocio_scelto)
+		return
 	var id := vista.selezionato
 	var t := progetto.trova(id) if id != "" else []
 	if vista.selezionati.size() > 1:
@@ -1788,6 +1791,12 @@ func _aggiorna_pannello() -> void:
 		_bottone(rpn, "Tutti ad angolo", func(): _comando({"comando": "punto", "id": id, "indice": -1, "curvo": false}), "Nastro a spigoli")
 	if chiave == "inserti":
 		_sezione_luce(id, e)
+	if chiave == "muri":
+		_sezione_varco()
+	if chiave in ["rampe", "nastri"] and not e.has("da_nastro"):
+		_sezione_incroci(id, e)
+	if chiave == "piani":
+		_sezione_varco_piano(id, e)
 	if chiave == "rampe":
 		_pannello.add_child(HSeparator.new())
 		_titolo_pannello("ALTEZZA DEI PUNTI")
@@ -1828,6 +1837,175 @@ func _aggiorna_pannello() -> void:
 		_pannello.add_child(n)
 	_pannello.add_child(HSeparator.new())
 	_strumenti_pezzo(_pannello, false)
+
+## sezione APRI UN VARCO del pannello del muro.
+func _sezione_varco() -> void:
+	_pannello.add_child(HSeparator.new())
+	_titolo_pannello("✂ APRI UN VARCO NEL MURO")
+	_etichetta("Nel varco metti")
+	var ob := OptionButton.new()
+	var valori := ["", "cancelli", "spinner", "bersagli"]
+	var larghi := [40.0, 46.0, 38.0, 24.0]
+	for o in ["niente (solo un'apertura)", "cancelletto", "spinner", "bersaglio"]:
+		ob.add_item(o)
+	if not vista.varco_metti in valori:
+		vista.varco_metti = "cancelli"
+		vista.varco_larghezza = 46.0
+	ob.selected = maxi(0, valori.find(vista.varco_metti))
+	_pannello.add_child(ob)
+	_etichetta("Larghezza del varco (mm)")
+	var sb := _numero(_pannello, vista.varco_larghezza, 6, 400, 1)
+	sb.value_changed.connect(func(v): vista.varco_larghezza = v)
+	ob.item_selected.connect(func(i):
+		vista.varco_metti = valori[i]
+		vista.varco_larghezza = larghi[i]
+		sb.set_value_no_signal(larghi[i]))
+	_bottone(_pannello, "✂ Apri il varco: poi clicca sul muro", func():
+		vista.varco_su = "muri"
+		vista.da_inserire = "varco"
+		_avviso("✂ Passa sopra un muro: la parte ROSSA è quella che si toglie. Clic per aprire il varco, Esc per smettere."), "Toglie un tratto del muro dove clicchi (anche sui tratti curvi) e ci mette il pezzo scelto, girato come il muro. Un solo «annulla».")
+
+## del piano rialzato.
+func _sezione_varco_piano(id: String, e: Dictionary) -> void:
+	_pannello.add_child(HSeparator.new())
+	_titolo_pannello("✂ VARCHI NEL BORDO DEL PIANO")
+	if bool(e.get("bordo_aperto", false)):
+		_etichetta("Il bordo è tutto aperto (la pallina può cadere da ogni lato): i varchi servono col bordo chiuso.")
+	_etichetta("Nel varco attacca")
+	var ob := OptionButton.new()
+	var valori := ["", "rampa_giu", "rampa_su", "nastro_giu", "nastro_su"]
+	for o in ["niente (la pallina scende giù da lì)", "rampa che SCENDE dal piano", "rampa che SALE sul piano", "nastro che SCENDE dal piano", "nastro che SALE sul piano"]:
+		ob.add_item(o)
+	if not vista.varco_metti in valori:
+		vista.varco_metti = "rampa_giu"
+		vista.varco_larghezza = 50.0
+	ob.selected = maxi(0, valori.find(vista.varco_metti))
+	_pannello.add_child(ob)
+	_etichetta("Larghezza del varco (mm)")
+	var sb := _numero(_pannello, vista.varco_larghezza, 20, 400, 1)
+	sb.value_changed.connect(func(v): vista.varco_larghezza = v)
+	ob.item_selected.connect(func(i):
+		vista.varco_metti = valori[i]
+		var l := 56.0 if str(valori[i]).begins_with("nastro") else 50.0
+		vista.varco_larghezza = l
+		sb.set_value_no_signal(l))
+	_bottone(_pannello, "✂ Apri il varco: poi clicca sul bordo", func():
+		vista.varco_su = "piani"
+		vista.da_inserire = "varco"
+		_avviso("✂ Passa sopra il bordo del piano: la parte ROSSA si toglie, la freccia verde è il pezzo attaccato. Clic per aprire, Esc per smettere."), "Toglie un tratto del bordo dove clicchi; il pezzo scelto parte dal varco (poi lo allunghi o lo pieghi coi quadratini). Un solo «annulla».")
+	var proposti := PianiRialzati.varchi_proposti(progetto.desc, e)
+	if not proposti.is_empty():
+		var lp := Label.new()
+		lp.text = "💡 %d rampe attraversano il bordo chiuso (%s): ti propongo di aprire lì il varco." % [proposti.size(), ", ".join(proposti.map(func(x): return "«%s»" % x["rampa"]))]
+		lp.autowrap_mode = TextServer.AUTOWRAP_WORD
+		lp.custom_minimum_size = Vector2(260, 0)
+		lp.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+		_pannello.add_child(lp)
+		_bottone(_pannello, "✔ Apri i varchi proposti", func(): _comando({"comando": "varchi_proposti", "id": id}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(); vista.queue_redraw(), "Un varco largo 50 mm dove ogni rampa passa il bordo; poi puoi chiuderlo o aprirne altri")
+	var varchi: Array = e.get("varchi", []) if e.get("varchi") is Array else []
+	for k in varchi.size():
+		var kk := k
+		var riga := HBoxContainer.new()
+		_pannello.add_child(riga)
+		var lb := Label.new()
+		lb.text = "Varco %d: %.0f mm" % [k + 1, float(varchi[k].get("larghezza", 50.0))]
+		lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		riga.add_child(lb)
+		_bottone(riga, "Chiudi", func(): _comando({"comando": "chiudi_varco", "id": id, "indice": kk}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(), "Il bordo torna intero in quel punto")
+
+## v0.30: INCROCI. Sezione nel pannello di rampe, binari e nastri: la regola generale e i suoi incroci.
+func _sezione_incroci(id: String, e: Dictionary) -> void:
+	var miei: Array = progetto.desc.get("_incroci", []).filter(func(v): return str(v["id_a"]) == id or str(v["id_b"]) == id)
+	_pannello.add_child(HSeparator.new())
+	_titolo_pannello("INCROCI (%d)" % miei.size())
+	_etichetta("Quando incontra un'altra rampa, un binario o un nastro:")
+	var ob := OptionButton.new()
+	var valori := ["", "sopra", "sotto", "stesso"]
+	for o in ["niente di automatico (altezze come le disegni)", "passa SOPRA (si alza da sola dove serve)", "passa SOTTO (si abbassa da sola dove serve)", "si incrocia alla STESSA ALTEZZA"]:
+		ob.add_item(o)
+	ob.selected = maxi(0, valori.find(str(e.get("incroci_modo", ""))))
+	ob.item_selected.connect(func(i): _comando({"comando": "incroci_regola", "id": id, "modo": valori[i]}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(); vista.queue_redraw())
+	_pannello.add_child(ob)
+	if str(e.get("incroci_modo", "")) in ["sopra", "sotto"]:
+		for k in [["margine", "incroci_margine", Incroci.LIBERO, "Spazio sopra/sotto l'altro percorso (mm; 32 = pallina giusta)", 5.0, 200.0], ["salita", "incroci_salita", Incroci.SALITA, "Lunghezza della salita e della discesa (mm)", 20.0, 600.0], ["piano", "incroci_piano", Incroci.PIANO, "Tratto in piano sull'incrocio (mm; minimo: largo quanto l'altro percorso)", 0.0, 400.0]]:
+			_etichetta(k[3])
+			var sb := _numero(_pannello, float(e.get(k[1], k[2])), k[4], k[5], 1)
+			var campo: String = k[0]
+			sb.value_changed.connect(func(v): _comando({"comando": "incroci_regola", "id": id, "modo": str(e.get("incroci_modo", "")), campo: v}); vista.queue_redraw())
+	var a_mano := miei.filter(func(v): return str(v.get("da", "")) == "incrocio" or bool(v.get("bloccato", false)))
+	for v in miei:
+		var altro: String = str(v["id_b"]) if str(v["id_a"]) == id else str(v["id_a"])
+		var stato: String = "conflitto: decidi tu" if str(v.get("conflitto", "")) != "" else ({"": "nessuna regola", "stesso": "stessa altezza"}.get(str(v.get("modo", "")), "uno sopra l'altro"))
+		if str(v.get("da", "")) == "incrocio":
+			stato += " · a mano"
+		var vv: Dictionary = v
+		_bottone(_pannello, "✚ con «%s»: %s" % [altro, stato], func(): vista.incrocio_scelto = str(vv["chiave"]); vista.seleziona(""); vista.centra_su(vv["pos"]); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(), "Apre questo incrocio (anche clic sul suo segnalino nel tavolo)")
+	if not a_mano.is_empty():
+		_bottone(_pannello, "↺ Torna automatico (perdi %d scelte fatte a mano)" % a_mano.size(), func():
+			_comando({"comando": "incroci_automatico", "id": id}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(); vista.queue_redraw(),
+			"Gli incroci decisi a mano di questo percorso tornano a seguire le regole: " + ", ".join(a_mano.map(func(v): return str(v["chiave"]))))
+
+## v0.30: pannello del SINGOLO INCROCIO (clic sul segnalino).
+func _pannello_incrocio(chiave: String) -> void:
+	var v := {}
+	for x in progetto.desc.get("_incroci", []):
+		if str(x["chiave"]) == chiave:
+			v = x
+	if v.is_empty():
+		vista.incrocio_scelto = ""
+		_pannello_tavolo()
+		return
+	var a := str(v["id_a"])
+	var b := str(v["id_b"])
+	_titolo_pannello("INCROCIO")
+	_etichetta("«%s»: %.0f mm disegnata → %.0f mm nel gioco" % [a, float(v["za"]), float(v.get("za_gioco", v["za"]))])
+	_etichetta("«%s»: %.0f mm disegnata → %.0f mm nel gioco" % [b, float(v["zb"]), float(v.get("zb_gioco", v["zb"]))])
+	var diff := absf(float(v.get("za_gioco", 0.0)) - float(v.get("zb_gioco", 0.0)))
+	var da := str(v.get("da", ""))
+	_etichetta("Come è deciso: " + ({"incrocio": "a mano, solo per questo incrocio", "regole": "automatico, dalle regole delle rampe"}.get(da, "nessuna regola: altezze come le hai disegnate")) + (" · BLOCCATO" if bool(v.get("bloccato", false)) else ""))
+	if str(v.get("conflitto", "")) != "":
+		var lc := Label.new()
+		lc.text = "⚠ " + str(v["conflitto"])
+		lc.autowrap_mode = TextServer.AUTOWRAP_WORD
+		lc.custom_minimum_size = Vector2(260, 0)
+		lc.add_theme_color_override("font_color", Color(1, 0.45, 0.4))
+		_pannello.add_child(lc)
+	elif str(v.get("modo", "")) != "stesso" and diff < Incroci.LIBERO - 0.5:
+		_etichetta("⚠ Differenza d'altezza: %.0f mm (ne servono %.0f): nel gioco la pallina di sotto toccherebbe quella di sopra." % [diff, Incroci.LIBERO])
+	_pannello.add_child(HSeparator.new())
+	_etichetta("Scegli tu (vale solo per questo incrocio):")
+	for o in [["a_sopra", "⬆ «%s» passa SOPRA" % a], ["a_sotto", "⬇ «%s» passa SOTTO" % a], ["b_sopra", "⬆ «%s» passa SOPRA" % b], ["b_sotto", "⬇ «%s» passa SOTTO" % b], ["stesso", "✚ Stessa altezza (ognuna resta sulla sua strada)"], ["unito", "⇄ Comunicanti: la pallina può cambiare strada (deviatore)"]]:
+		var modo: String = o[0]
+		var bt := _bottone(_pannello, o[1] + ("  ✔" if str(v.get("modo", "")) == modo and da == "incrocio" else ""), func(): _comando({"comando": "incrocio", "chiave": chiave, "modo": modo}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(); vista.queue_redraw(), "")
+		bt.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	if str(v.get("modo", "")) == "unito":
+		_etichetta("Deviatore nell'incrocio")
+		var obd := OptionButton.new()
+		var dvv := ["alterna", "sempre", "mai", "comandato"]
+		for o in ["alterna: una pallina per strada", "sempre: cambia strada", "mai: resta sulla sua strada", "comandato dalle missioni"]:
+			obd.add_item(o)
+		obd.selected = maxi(0, dvv.find(str(v.get("devia", "alterna"))))
+		obd.item_selected.connect(func(i): _comando({"comando": "incrocio", "chiave": chiave, "devia": dvv[i]}))
+		_pannello.add_child(obd)
+	if str(v.get("modo", "")) in ["a_sopra", "a_sotto", "b_sopra", "b_sotto"]:
+		var chi := a if str(v["modo"]).begins_with("a") else b
+		_etichetta("Quota di «%s» nell'incrocio (mm, a mano)" % chi)
+		var q := float(v.get("obiettivo", v.get("za_gioco", 0.0)))
+		var sb := _numero(_pannello, q, 0, 300, 1)
+		sb.value_changed.connect(func(val): _comando({"comando": "incrocio", "chiave": chiave, "quota": val}); vista.queue_redraw())
+		_bottone(_pannello, "Quota automatica", func(): _comando({"comando": "incrocio", "chiave": chiave, "quota": null}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(), "Torna alla quota calcolata (altro percorso + spazio per la pallina)")
+	var cb := CheckBox.new()
+	cb.text = "Bloccato (l'automatico non tocca questo incrocio)"
+	cb.button_pressed = bool(v.get("bloccato", false))
+	cb.toggled.connect(func(on): _comando({"comando": "incrocio", "chiave": chiave, "bloccato": on}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(); vista.queue_redraw())
+	_pannello.add_child(cb)
+	if da == "incrocio" or bool(v.get("bloccato", false)):
+		_bottone(_pannello, "↺ Torna automatico", func(): _comando({"comando": "incrocio", "chiave": chiave, "modo": "", "bloccato": false}); _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(); vista.queue_redraw(), "Questo incrocio torna a seguire le regole delle rampe")
+	_pannello.add_child(HSeparator.new())
+	for id_p in [a, b]:
+		var idp: String = id_p
+		_bottone(_pannello, "Scegli «%s»" % idp, func(): vista.incrocio_scelto = ""; vista.seleziona(idp), "")
+	_bottone(_pannello, "Chiudi", func(): vista.incrocio_scelto = ""; _ricostruisci_pannello = true; _aggiorna_pannello.call_deferred(); vista.queue_redraw(), "")
 
 ## Pulsanti che agiscono su tutti i pezzi scelti (anche uno solo).
 func _gruppo(azione: String, extra := {}) -> void:
@@ -2236,9 +2414,59 @@ func _campo(f: Dictionary, v) -> void:
 ## Tavolozza dei colori: il colore si applica DOPO che la sua finestra si è chiusa del tutto (call_deferred). Prima si
 ## applicava subito e il pannello, ricostruito, cancellava il pulsante mentre chiudeva la finestra: il programma si
 func _al_chiudere(cpb: ColorPickerButton, f: Callable) -> void:
+	_prepara_tavolozza(cpb)
 	cpb.popup_closed.connect(func():
 		var c := cpb.color
+		_ricorda_colore(c)
 		f.call_deferred(c))
+
+## ha una barra del titolo (si trascina dove si vuole) e mostra i COLORI RECENTI, gli stessi in tutte le tavolozze
+## finché l'editor resta aperto (gli ultimi 16, il più nuovo per primo).
+static var colori_recenti: Array = []
+static var _posto_tavolozza := Vector2i(-1, -1)
+
+func _prepara_tavolozza(cpb: ColorPickerButton) -> void:
+	var pop := cpb.get_popup()
+	pop.borderless = false
+	pop.title = "Colore  (trascina qui per spostare)"
+	var picker := cpb.get_picker()
+	picker.presets_visible = true
+	pop.about_to_popup.connect(func():
+		for vecchio in picker.get_recent_presets():
+			picker.erase_recent_preset(vecchio)
+		for j in range(colori_recenti.size() - 1, -1, -1):
+			picker.add_recent_preset(colori_recenti[j])
+		_apri_recenti(picker)
+		# si riapre dove l'avevi lasciata l'ultima volta
+		if _posto_tavolozza.x >= 0:
+			_metti_tavolozza.call_deferred(pop))
+	pop.popup_hide.connect(func(): _posto_tavolozza = pop.position)
+
+## La sezione «Recent Colors» della tavolozza di Godot parte chiusa: se ci sono colori recenti la si apre.
+func _apri_recenti(n: Node) -> void:
+	if colori_recenti.is_empty():
+		return
+	for c in n.get_children(true):
+		if c is Button and str(c.text) == "Recent Colors":
+			var dopo := c.get_parent().get_child(c.get_index(true) + 1, true) if c.get_index(true) + 1 < c.get_parent().get_child_count(true) else null
+			if dopo is Control and not dopo.visible:
+				c.button_pressed = true          # la sezione si apre con il segnale «toggled»
+			return
+		_apri_recenti(c)
+
+func _metti_tavolozza(pop: Window) -> void:
+	if not is_instance_valid(pop) or not pop.visible:
+		return
+	var schermo := Vector2i(get_viewport().get_visible_rect().size)
+	pop.position = Vector2i(clampi(_posto_tavolozza.x, 0, maxi(0, schermo.x - pop.size.x)), clampi(_posto_tavolozza.y, 24, maxi(24, schermo.y - pop.size.y)))
+
+func _ricorda_colore(c: Color) -> void:
+	for j in range(colori_recenti.size() - 1, -1, -1):
+		if (colori_recenti[j] as Color).is_equal_approx(c):
+			colori_recenti.remove_at(j)
+	colori_recenti.push_front(c)
+	if colori_recenti.size() > 16:
+		colori_recenti.resize(16)
 
 func _numero(dove: Control, v: float, a: float, b: float, passo: float) -> SpinBox:
 	var sb := SpinBox.new()
@@ -3039,6 +3267,7 @@ func _controlla() -> void:
 	vista.problemi = ControlliEditor.varchi(progetto.desc)
 	vista.problemi.append_array(ControlliEditor.piatti(progetto.desc))
 	vista.problemi.append_array(ControlliEditor.incroci(progetto.desc))
+	vista.problemi.append_array(Incroci.controlli(progetto.desc))
 	# v0.18.1: tiri di riferimento rifatti sul tavolo di adesso
 	for e in Tracciatore.verifica(progetto.desc):
 		if not e["ok"]:
@@ -3093,13 +3322,18 @@ func _fine_caccia(testo: String) -> void:
 		_avviso("La caccia agli incastri non è riuscita (il motore ha dato errore): prova GIOCA per vedere il problema.")
 	else:
 		var n_err := vista.problemi.filter(func(x): return x["livello"] == "errore").size()
-		_avviso("CONTROLLA finito: %d da sistemare (rosso), %d da controllare (arancio)." % [n_err, vista.problemi.size() - n_err] if not vista.problemi.is_empty() else "CONTROLLA finito: nessun problema trovato. ✔")
+		var n_info := vista.problemi.filter(func(x): return x["livello"] == "info").size()
+		_avviso("CONTROLLA finito: %d da sistemare (rosso), %d da controllare (arancio), %d informazioni (azzurro)." % [n_err, vista.problemi.size() - n_err - n_info, n_info] if not vista.problemi.is_empty() else "CONTROLLA finito: nessun problema trovato. ✔")
 
 func _mostra_problemi() -> void:
 	_problemi.clear()
+	# v0.30: tre categorie, prima gli errori: ● errore fisico (rosso), ○ avviso (arancio), ℹ informazione (azzurro)
+	var ordine := {"errore": 0, "potenziale": 1, "info": 2}
+	vista.problemi.sort_custom(func(x, y): return int(ordine.get(str(x["livello"]), 1)) < int(ordine.get(str(y["livello"]), 1)))
 	for p in vista.problemi:
-		var i := _problemi.add_item(("● " if p["livello"] == "errore" else "○ ") + str(p["testo"]))
-		_problemi.set_item_custom_fg_color(i, Color(1, 0.45, 0.45) if p["livello"] == "errore" else Color(1, 0.75, 0.4))
+		var liv := str(p["livello"])
+		var i := _problemi.add_item({"errore": "● ", "info": "ℹ "}.get(liv, "○ ") + str(p["testo"]))
+		_problemi.set_item_custom_fg_color(i, {"errore": Color(1, 0.45, 0.45), "info": Color(0.55, 0.8, 1.0)}.get(liv, Color(1, 0.75, 0.4)))
 	if vista.problemi.is_empty():
 		_problemi.add_item("Nessun problema trovato.")
 	vista.queue_redraw()
@@ -3113,6 +3347,15 @@ func _su_problema(i: int) -> void:
 		vista.evidenziato = p["pos"]
 		vista.centra_su(p["pos"])
 		_avviso(str(p["testo"]))
+		# v0.30: segnalazione di un incrocio = si apre il suo pannello; di un pezzo = si sceglie il pezzo
+		if str(p.get("chiave", "")) != "":
+			vista.incrocio_scelto = str(p["chiave"])
+			vista.seleziona("")
+			_ricostruisci_pannello = true
+			_aggiorna_pannello.call_deferred()
+		elif p.get("pezzi") is Array and not (p["pezzi"] as Array).is_empty() and not progetto.trova(str(p["pezzi"][0])).is_empty():
+			vista.incrocio_scelto = ""
+			vista.seleziona(str(p["pezzi"][0]))
 
 # ================================================================ aggiornamenti
 func _su_cambiato() -> void:

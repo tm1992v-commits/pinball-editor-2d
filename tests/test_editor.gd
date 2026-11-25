@@ -930,4 +930,350 @@ func _prova_mouse() -> void:
 	_muovi(v, Vector2(320, 420))
 	_clic(v, Vector2(320, 420), false)
 	_prova("mouse: trascinare uno sposta tutto il gruppo", p.pezzo("bumper_2")["pos"] == Vector2(520, 320))
+	_prove_v029(p, v)
 	v.queue_free()
+
+## v0.29: luce nuova come l'ultima, immagine sul piano più grande del tavolo, vista ferma quando cambia misura.
+func _prove_v029(p: ProgettoEditor, v: VistaTavolo) -> void:
+	ProgettoEditor.ultima_luce = {}
+	var r1 := p.esegui({"comando": "aggiungi", "tipo": "inserti", "pos": [200, 600]})
+	p.esegui({"comando": "imposta", "id": r1["id"], "campo": "colore", "valore": Color(0.2, 0.3, 0.9)})
+	p.esegui({"comando": "imposta", "id": r1["id"], "campo": "dim", "valore": Vector2(15, 15)})
+	var r2 := p.esegui({"comando": "aggiungi", "tipo": "inserti", "pos": [260, 600]})
+	var l2 := p.pezzo(r2["id"])
+	_prova("luce nuova: stesso colore e misura dell'ultima scelta", (l2["colore"] as Color).is_equal_approx(Color(0.2, 0.3, 0.9)) and l2["dim"] == Vector2(15, 15))
+	var r3 := p.esegui({"comando": "aggiungi", "tipo": "inserti", "pos": [300, 600]}, "ai")
+	_prova("luce nuova dai comandi automatici: valori predefiniti", p.pezzo(r3["id"])["dim"] == Vector2(20, 20))
+	ProgettoEditor.ultima_luce = {}
+	# immagine sul piano alta 1600 mm (più del tavolo): le maniglie restano dentro la vista e funzionano
+	var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.5, 0.2, 0.8))
+	var f_img := "user://prova_v029.png"
+	img.save_png(f_img)
+	var rd := p.esegui({"comando": "aggiungi", "tipo": "decorazioni", "pos": [310, 585]})
+	p.esegui({"comando": "immagine", "id": rd["id"], "file": ProjectSettings.globalize_path(f_img)})
+	var de := p.pezzo(rd["id"])
+	de["dim"] = Vector2(790, 1600)
+	v.adatta()
+	v.scala = 1.0
+	v.origine = Vector2(80, -100)
+	v.seleziona(rd["id"])
+	var mi := v._maniglie_immagine()
+	var dentro := Rect2(Vector2.ZERO, v.size)
+	var tutte_dentro := true
+	for j in [0, 1, 4, 8, 9]:
+		tutte_dentro = tutte_dentro and dentro.has_point(v._pm(mi[j]))
+	_prova("immagine grande: angolo, lati e rotazione disegnati dentro la vista", not mi.is_empty() and tutte_dentro and not dentro.has_point(v.px(mi[1])))
+	_prova("immagine grande: il clic dentro l'immagine disegnata la sceglie", v._pezzo_immagine_in(Vector2(310, 1300), true) == rd["id"] or v.pezzo_in(Vector2(310, 1300)) == rd["id"])
+	# allunga dal lato basso (riportato dentro lo schermo): l'altezza cambia nella stessa proporzione del mouse
+	var q0 := v.mm(v._pm(mi[9]))
+	var d0: Vector2 = de["dim"]
+	_clic(v, q0, true)
+	var q1 := Vector2(310, 585) + (q0 - Vector2(310, 585)) * 0.5
+	_muovi(v, q1)
+	_clic(v, q1, false)
+	var de2 := p.pezzo(rd["id"])
+	_prova("immagine grande: il lato basso riportato dentro allunga/accorcia l'altezza (%.0f → %.0f)" % [d0.y, Vector2(de2["dim"]).y], absf(Vector2(de2["dim"]).y - d0.y * 0.5) < 6.0 and absf(Vector2(de2["dim"]).x - d0.x) < 0.6)
+	# rotazione dal pallino riportato dentro: gira di quanto gira il mouse intorno al centro
+	mi = v._maniglie_immagine()
+	var c: Vector2 = mi[0]
+	var qr := v.mm(v._pm(mi[4]))
+	_clic(v, qr, true)
+	var qr2 := c + (qr - c).rotated(deg_to_rad(30))
+	_muovi(v, qr2)
+	_clic(v, qr2, false)
+	_prova("immagine grande: il pallino riportato dentro gira l'immagine di 30°", absf(rad_to_deg(float(p.pezzo(rd["id"]).get("angolo", 0.0))) - 30.0) < 1.5)
+	# vista ferma: se la zona del tavolo cambia larghezza (pannello a destra) il punto al centro resta al centro
+	v._misura_prima = v.size
+	var centro0 := v.centro_vista()
+	var sc0 := v.scala
+	v.size = v.size + Vector2(-120, 0)
+	v._ridimensionata()
+	_prova("vista: cambiando larghezza non torna indietro (stessa scala e stesso centro)", v.scala == sc0 and v.centro_vista().distance_to(centro0) <= 5.0)
+	v._aggiorna_scorrimento()
+	_prova("vista: barre di scorrimento con la parte vista", v._scorri_x.visible and v._scorri_y.visible and absf(v._scorri_y.page - v.size.y / v.scala) < 0.5)
+	v._scorri_y.value = v._scorri_y.value + 100.0
+	_prova("vista: la barra verticale fa scorrere il tavolo", absf(v.mm(Vector2.ZERO).y - v._scorri_y.value) < 0.5)
+	_prove_maniglie_pezzi(p, v)
+	_prove_varco(p, v)
+	_prove_varco_piano()
+	_prove_incroci()
+
+## v0.29: maniglie col mouse per tutti i pezzi (ruota, ingrandisci, allarga, allunga).
+func _trascina_maniglia(v: VistaTavolo, da: Vector2, a: Vector2, ctrl := false) -> void:
+	_clic(v, da, true)
+	var e := InputEventMouseMotion.new()
+	e.position = v.px(a)
+	e.ctrl_pressed = ctrl
+	v._gui_input(e)
+	_clic(v, a, false)
+
+func _prove_maniglie_pezzi(p: ProgettoEditor, v: VistaTavolo) -> void:
+	v.adatta()
+	v.scala = 1.0
+	v.origine = Vector2(100, 100)
+	# cancello: ruota col pallino, si allarga dalla maniglia a destra
+	var rc := p.esegui({"comando": "aggiungi", "tipo": "cancelli", "pos": [300, 300]})
+	v.seleziona(rc["id"])
+	var mp := v._maniglie_pezzo()
+	_prova("maniglie: il cancello ha pallino di rotazione, angolo e lato", not mp.is_empty() and mp["ruota"] != null and mp["lato_x"] != null and mp["lato_y"] == null)
+	var c: Vector2 = mp["c"]
+	_trascina_maniglia(v, mp["ruota"], c + (Vector2(mp["ruota"]) - c).rotated(deg_to_rad(40)), true)
+	_prova("maniglie: cancello ruotato col mouse a scatti di 15° (45°)", absf(rad_to_deg(float(p.pezzo(rc["id"])["angolo"])) - 45.0) < 0.6)
+	mp = v._maniglie_pezzo()
+	var l0 := float(p.pezzo(rc["id"])["larghezza"])
+	var qx: Vector2 = mp["lato_x"]
+	_trascina_maniglia(v, qx, c + (qx - c) * 1.5)
+	_prova("maniglie: cancello allargato col mouse (%.0f → %.0f mm)" % [l0, float(p.pezzo(rc["id"])["larghezza"])], float(p.pezzo(rc["id"])["larghezza"]) > l0 * 1.3)
+	p.esegui({"comando": "annulla"})
+	_prova("maniglie: un solo «annulla» per trascinamento", is_equal_approx(float(p.pezzo(rc["id"])["larghezza"]), l0))
+	# bersaglio: allunga solo l'altezza
+	var rb := p.esegui({"comando": "aggiungi", "tipo": "bersagli", "pos": [450, 300]})
+	v.seleziona(rb["id"])
+	mp = v._maniglie_pezzo()
+	var d0: Vector2 = p.pezzo(rb["id"])["dim"]
+	_trascina_maniglia(v, mp["lato_y"], Vector2(mp["c"]) + (Vector2(mp["lato_y"]) - Vector2(mp["c"])) * 2.0)
+	var d1: Vector2 = p.pezzo(rb["id"])["dim"]
+	_prova("maniglie: bersaglio allungato solo in altezza (%s → %s)" % [d0, d1], d1.x == d0.x and d1.y > d0.y * 1.5)
+	# bumper: il quadratino ingrandisce, il bumper tondo non ruota
+	var ru := p.esegui({"comando": "aggiungi", "tipo": "bumper", "pos": [300, 450]})
+	v.seleziona(ru["id"])
+	mp = v._maniglie_pezzo()
+	_prova("maniglie: il bumper non ha il pallino di rotazione", mp["ruota"] == null)
+	_trascina_maniglia(v, mp["angolo"], Vector2(mp["c"]) + (Vector2(mp["angolo"]) - Vector2(mp["c"])) * 0.5)
+	_prova("maniglie: bumper rimpicciolito dal quadratino", float(p.pezzo(ru["id"])["raggio"]) < 20.0)
+	# muro: si allarga (punti) e le maniglie non coprono i suoi punti
+	var rm := p.esegui({"comando": "aggiungi", "tipo": "muri", "punti": [[200, 600], [300, 650], [400, 600]]})
+	v.seleziona(rm["id"])
+	mp = v._maniglie_pezzo()
+	var ok_punti := true
+	for q in ProgettoEditor.punti_2d("muri", p.pezzo(rm["id"])):
+		ok_punti = ok_punti and v._maniglia_pezzo_in(q) == ""
+	_prova("maniglie: sul muro non coprono i punti", ok_punti)
+	_trascina_maniglia(v, mp["lato_x"], Vector2(mp["c"]) + (Vector2(mp["lato_x"]) - Vector2(mp["c"])) * 2.0)
+	var pts := ProgettoEditor.punti_2d("muri", p.pezzo(rm["id"]))
+	_prova("maniglie: muro allargato (da 200 mm a circa 400)", absf((pts[2].x - pts[0].x) - 400.0) < 60.0 and pts[1].y == 650.0)
+
+## v0.29: varco nel muro (toglie un tratto e ci mette un cancelletto, spinner o bersaglio).
+func _prove_varco(p: ProgettoEditor, v: VistaTavolo) -> void:
+	var nm0: int = p.desc["muri"].size()
+	var rm := p.esegui({"comando": "aggiungi", "tipo": "muri", "punti": [[100, 900], [300, 900], [300, 1100]]})
+	var r := p.esegui({"comando": "varco", "id": rm["id"], "pos": [200, 903], "larghezza": 46, "metti": "cancelli"})
+	var cg := p.pezzo(str(r.get("id", "")))
+	_prova("varco: il muro aperto diventa due muri", r.get("ok", false) and p.desc["muri"].size() == nm0 + 2 and r["muri"].size() == 2)
+	var m1: PackedVector2Array = p.pezzo(rm["id"])["controllo"]
+	var m2: PackedVector2Array = p.pezzo(str(r["muri"][1]))["controllo"]
+	_prova("varco: i due pezzi finiscono ai lati del varco (177 e 223)", m1.size() == 2 and m1[1].is_equal_approx(Vector2(177, 900)) and m2[0].is_equal_approx(Vector2(223, 900)) and m2.size() == 3)
+	_prova("varco: cancelletto in mezzo, largo come il varco e girato come il muro", not cg.is_empty() and Vector2(cg["pos"]) == Vector2(200, 900) and is_equal_approx(float(cg["larghezza"]), 46.0) and absf(float(cg["angolo"])) < 0.001)
+	p.esegui({"comando": "annulla"})
+	_prova("varco: un solo «annulla» rimette il muro intero", p.desc["muri"].size() == nm0 + 1 and p.pezzo(rm["id"])["controllo"].size() == 3 and p.desc.get("cancelli", []).filter(func(x): return x["id"] == cg["id"]).is_empty())
+	# muro CHIUSO: si apre e resta uno solo
+	var rq := p.esegui({"comando": "aggiungi", "tipo": "muri", "punti": [[400, 900], [500, 900], [500, 1000], [400, 1000]], "chiuso": true})
+	var r2 := p.esegui({"comando": "varco", "id": rq["id"], "pos": [500, 950], "larghezza": 30, "metti": "spinner"})
+	var mq := p.pezzo(rq["id"])
+	var cq: PackedVector2Array = mq["controllo"]
+	_prova("varco: il muro chiuso si apre e resta uno solo (6 punti, da 965 a 935)", r2.get("ok", false) and r2["muri"].size() == 1 and not bool(mq["chiuso"]) and cq.size() == 6 and cq[0].is_equal_approx(Vector2(500, 965)) and cq[5].is_equal_approx(Vector2(500, 935)))
+	_prova("varco: lo spinner nel tratto verticale è girato di 90°", absf(absf(rad_to_deg(float(p.pezzo(r2["id"])["angolo"]))) - 90.0) < 0.5)
+	# tratto CURVO: gli estremi del varco stanno sulla curva disegnata
+	var rc := p.esegui({"comando": "aggiungi", "tipo": "muri", "punti": [[100, 300], [200, 200], [300, 300]], "curvi": [false, true, false]})
+	var linea0: PackedVector2Array = p.pezzo(rc["id"])["punti"]
+	var r3 := p.esegui({"comando": "varco", "id": rc["id"], "pos": [150, 240], "larghezza": 20, "metti": ""})
+	var a: Vector2 = p.pezzo(rc["id"])["controllo"][p.pezzo(rc["id"])["controllo"].size() - 1]
+	var dmin := INF
+	for k in linea0.size() - 1:
+		dmin = minf(dmin, Geometry2D.get_closest_point_to_segment(a, linea0[k], linea0[k + 1]).distance_to(a))
+	_prova("varco: sul tratto curvo il taglio cade sulla curva (scarto %.2f mm)" % dmin, r3.get("ok", false) and dmin < 0.6 and not r3.has("id"))
+	# col MOUSE: strumento varco, clic sul muro
+	var rv := p.esegui({"comando": "aggiungi", "tipo": "muri", "punti": [[100, 700], [500, 700]]})
+	v.varco_metti = "bersagli"
+	v.varco_larghezza = 24.0
+	v.da_inserire = "varco"
+	_prova("varco col mouse: anteprima sul muro sotto il mouse", v.varco_sotto(Vector2(300, 702)).get("id", "") == rv["id"])
+	_clic(v, Vector2(300, 702), true)
+	_clic(v, Vector2(300, 702), false)
+	var bs := p.pezzo(v.selezionato)
+	_prova("varco col mouse: bersaglio messo nel varco e scelto", v.da_inserire == "" and not bs.is_empty() and Vector2(bs["dim"]).x == 24.0 and Vector2(bs["pos"]) == Vector2(300, 700))
+
+## v0.29: varchi nel bordo del piano rialzato (dati e bordo spezzato).
+func _prove_varco_piano() -> void:
+	var p := ProgettoEditor.new()
+	p.esegui({"comando": "nuovo", "modello": "base", "nome": "VarchiPiano"})
+	var rp := p.esegui({"comando": "aggiungi", "tipo": "piani", "punti": [[200, 300], [400, 300], [400, 500], [200, 500]]})
+	var id: String = rp["id"]
+	var g := PianiRialzati.giro(p.pezzo(id))
+	var tot := PianiRialzati.lunghezza(g)
+	var r1 := p.esegui({"comando": "varco", "id": id, "pos": [300, 302], "larghezza": 50})
+	var pezzi: Array = PianiRialzati.bordo_spezzato(p.pezzo(id))
+	var l_pezzi := 0.0
+	for pz in pezzi:
+		l_pezzi += PianiRialzati.lunghezza(pz)
+	_prova("varco piano: un varco = un pezzo di bordo lungo il giro meno 50 mm (%.0f di %.0f)" % [l_pezzi, tot], r1.get("ok", false) and pezzi.size() == 1 and absf(l_pezzi - (tot - 50.0)) < 1.0)
+	var e1: Array = PianiRialzati.estremi_varchi(p.pezzo(id))
+	_prova("varco piano: estremi del varco sul lato alto (275 e 325)", e1.size() == 1 and absf(Vector2(e1[0][0]).y - 300.0) < 0.5 and absf(absf(Vector2(e1[0][0]).x - Vector2(e1[0][1]).x) - 50.0) < 0.5)
+	p.esegui({"comando": "varco", "id": id, "pos": [402, 400], "larghezza": 40})
+	pezzi = PianiRialzati.bordo_spezzato(p.pezzo(id))
+	_prova("varco piano: due varchi = due pezzi di bordo", pezzi.size() == 2)
+	# varco a cavallo del primo punto del giro (l'angolo 200,300)
+	p.esegui({"comando": "chiudi_varco", "id": id, "indice": 1})
+	p.esegui({"comando": "chiudi_varco", "id": id, "indice": 0})
+	p.esegui({"comando": "varco", "id": id, "pos": [200, 300], "larghezza": 60})
+	pezzi = PianiRialzati.bordo_spezzato(p.pezzo(id))
+	var ok_angolo := pezzi.size() == 1 and absf(PianiRialzati.lunghezza(pezzi[0]) - (tot - 60.0)) < 1.0
+	for q in pezzi[0]:
+		ok_angolo = ok_angolo and q.distance_to(Vector2(200, 300)) > 25.0
+	_prova("varco piano: anche a cavallo dell'angolo di partenza il bordo resta giusto", ok_angolo)
+	var muri_bordo: Array = p.desc["muri"].filter(func(m): return str(m.get("id", "")).begins_with(id + "@bordo"))
+	_prova("varco piano: il motore ha il bordo spezzato", muri_bordo.size() == 1)
+	# pezzi attaccati: nastro che sale
+	var rn := p.esegui({"comando": "varco", "id": id, "pos": [300, 502], "larghezza": 56, "metti": "nastro_su"})
+	var na := p.pezzo(str(rn.get("id", "")))
+	var c_na: PackedVector2Array = na.get("controllo", PackedVector2Array())
+	_prova("varco piano: il nastro che sale parte da fuori e finisce dentro il piano", c_na.size() == 3 and c_na[0].y > 600.0 and c_na[2].y < 500.0 and float(na["altezze"][2]) > 0.0)
+	var rapporto := p.esegui({"comando": "varco", "id": id, "pos": [300, 502], "metti": "cancelli"})
+	_prova("varco piano: sul piano niente cancelletto (solo rampe e nastri)", not rapporto.get("ok", true))
+
+## v0.30: INCROCI (regole delle rampe, scelte dei singoli incroci, profilo di gioco, conflitti, salvataggio).
+func _z_incrocio(p: ProgettoEditor, chiave: String) -> Array:
+	for v in p.desc.get("_incroci", []):
+		if v["chiave"] == chiave:
+			return [float(v["za_gioco"]), float(v["zb_gioco"]), str(v.get("conflitto", "")), str(v.get("modo", "")), str(v.get("da", ""))]
+	return []
+
+func _prove_incroci() -> void:
+	var p := ProgettoEditor.new()
+	p.esegui({"comando": "nuovo", "modello": "base", "nome": "Incroci"})
+	var a := p.esegui({"comando": "aggiungi", "id": "rampa_a", "tipo": "rampe", "punti": [[100, 700], [300, 500], [500, 300]], "altezza_max": 40})
+	var b := p.esegui({"comando": "aggiungi", "id": "rampa_b", "tipo": "rampe", "punti": [[100, 300], [300, 500], [500, 700]], "altezza_max": 40})
+	var base_a: Array = p.pezzo("rampa_a")["punti"].duplicate()
+	var incs: Array = p.desc.get("_incroci", [])
+	_prova("incroci: due rampe che si incrociano = un incrocio con la sua chiave", incs.size() == 1 and incs[0]["chiave"] == "rampa_a|rampa_b#0")
+	_prova("incroci: senza regole nessun profilo nuovo (tavoli vecchi uguali)", not p.pezzo("rampa_a").has("punti_gioco") and not p.pezzo("rampa_b").has("punti_gioco"))
+	var k := "rampa_a|rampa_b#0"
+	p.esegui({"comando": "incroci_regola", "id": "rampa_a", "modo": "sopra"})
+	var z := _z_incrocio(p, k)
+	_prova("incroci: «passa sopra» alza la rampa nell'incrocio (%.0f sopra %.0f)" % [z[0], z[1]], z[0] >= z[1] + 31.5 and z[2] == "")
+	_prova("incroci: le altezze disegnate non cambiano (solo il profilo di gioco)", p.pezzo("rampa_a")["punti"] == base_a and p.pezzo("rampa_a").has("punti_gioco"))
+	var pg: Array = p.pezzo("rampa_a")["punti_gioco"]
+	_prova("incroci: imbocco e uscita restano dove sono", Vector3(pg[0]).is_equal_approx(Vector3(base_a[0])) and Vector3(pg[pg.size() - 1]).is_equal_approx(Vector3(base_a[base_a.size() - 1])))
+	_prova("incroci: la rampa di sopra si disegna dopo quella di sotto", (p.desc.get("ordine_rampe", []) as Array).find("rampa_a") > (p.desc.get("ordine_rampe", []) as Array).find("rampa_b"))
+	_prova("incroci: CONTROLLA non segnala più l'incrocio risolto", ControlliEditor.incroci(p.desc).is_empty())
+	# conflitto: tutte e due «sopra»
+	p.esegui({"comando": "incroci_regola", "id": "rampa_b", "modo": "sopra"})
+	z = _z_incrocio(p, k)
+	_prova("incroci: tutte e due «sopra» = conflitto, l'editor non sceglie", z[2] != "" and not p.pezzo("rampa_a").has("punti_gioco") and not Incroci.controlli(p.desc).is_empty())
+	# scelta del singolo incrocio: vince sulle regole e resta quando cambi la regola
+	p.esegui({"comando": "incrocio", "chiave": k, "modo": "b_sotto"})
+	z = _z_incrocio(p, k)
+	_prova("incroci: la scelta del singolo incrocio risolve il conflitto (b sotto)", z[2] == "" and z[4] == "incrocio" and z[0] >= z[1] + 31.5)
+	p.esegui({"comando": "incroci_regola", "id": "rampa_b", "modo": "stesso"})
+	z = _z_incrocio(p, k)
+	_prova("incroci: cambiando la regola della rampa la scelta a mano resta (test 6)", z[3] == "b_sotto" and z[4] == "incrocio")
+	# quota a mano, anche «sbagliata»: si tiene e si segnala
+	p.esegui({"comando": "incrocio", "chiave": k, "modo": "a_sopra", "quota": 30})
+	z = _z_incrocio(p, k)
+	var segnalato := ControlliEditor.incroci(p.desc).any(func(x): return str(x["tipo"]) == "incrocio")
+	_prova("incroci: quota a mano troppo bassa = tenuta e segnalata, non corretta (test 8)", absf(z[0] - maxf(30.0, z[0])) < 0.6 and segnalato)
+	# torna automatico
+	var rt := p.esegui({"comando": "incroci_automatico", "id": "rampa_a"})
+	z = _z_incrocio(p, k)
+	_prova("incroci: «torna automatico» toglie le scelte a mano e segue le regole (test 7)", int(rt.get("tolti", 0)) == 1 and z[4] == "regole")
+	# stessa altezza: niente profilo, niente avviso di differenza
+	p.esegui({"comando": "incroci_regola", "id": "rampa_a", "modo": "stesso"})
+	_prova("incroci: «stessa altezza» non cambia le altezze e non è un errore", not p.pezzo("rampa_a").has("punti_gioco") and ControlliEditor.incroci(p.desc).is_empty())
+	# passa SOTTO: una rampa alta e una bassa
+	p.esegui({"comando": "incroci_regola", "id": "rampa_a", "modo": ""})
+	p.esegui({"comando": "incroci_regola", "id": "rampa_b", "modo": ""})
+	p.esegui({"comando": "punto", "id": "rampa_b", "altezza_tutta": 60})
+	p.esegui({"comando": "incroci_regola", "id": "rampa_a", "modo": "sotto"})
+	z = _z_incrocio(p, k)
+	_prova("incroci: «passa sotto» abbassa la rampa nell'incrocio (%.0f sotto %.0f)" % [z[0], z[1]], z[2] == "" and z[0] <= z[1] - 31.5 and z[0] < 39.0)
+	# salvataggio e riapertura (test 10)
+	p.esegui({"comando": "incrocio", "chiave": k, "modo": "b_sopra", "bloccato": false})
+	var cart := ProjectSettings.globalize_path("user://prova_incroci.pinproj")
+	p.esegui({"comando": "salva", "cartella": cart})
+	var q := ProgettoEditor.new()
+	q.esegui({"comando": "apri", "cartella": cart})
+	var zq := _z_incrocio(q, k)
+	_prova("incroci: dopo salva e riapri regole e scelte sono uguali (test 10)", str(q.pezzo("rampa_a").get("incroci_modo", "")) == "sotto" and zq.size() == 5 and zq[3] == "b_sopra" and zq[4] == "incrocio")
+	# annulla e ripristina (test 12)
+	var prima := str(p.pezzo("rampa_a").get("incroci_modo", ""))
+	p.esegui({"comando": "incroci_regola", "id": "rampa_a", "modo": "sopra"})
+	p.esegui({"comando": "annulla"})
+	var dopo_annulla := str(p.pezzo("rampa_a").get("incroci_modo", ""))
+	p.esegui({"comando": "ripristina"})
+	_prova("incroci: annulla e ripristina della regola (test 12)", dopo_annulla == prima and str(p.pezzo("rampa_a").get("incroci_modo", "")) == "sopra")
+	# più incroci: una rampa che ne attraversa due, configurazioni indipendenti (test 5)
+	var r3 := ProgettoEditor.new()
+	r3.esegui({"comando": "nuovo", "modello": "base", "nome": "Piu"})
+	r3.esegui({"comando": "aggiungi", "id": "lunga", "tipo": "rampe", "punti": [[80, 500], [300, 500], [560, 500]], "altezza_max": 40})
+	r3.esegui({"comando": "aggiungi", "id": "x1", "tipo": "rampe", "punti": [[200, 300], [200, 500], [200, 700]], "altezza_max": 40})
+	r3.esegui({"comando": "aggiungi", "id": "x2", "tipo": "rampe", "punti": [[420, 300], [420, 500], [420, 700]], "altezza_max": 40})
+	r3.esegui({"comando": "incroci_regola", "id": "lunga", "modo": "sopra"})
+	r3.esegui({"comando": "incrocio", "chiave": "lunga|x2#0", "modo": "stesso"})
+	var z1 := _z_incrocio(r3, "lunga|x1#0")
+	var z2 := _z_incrocio(r3, "lunga|x2#0")
+	_prova("incroci: più incroci sulla stessa rampa, ognuno con la sua scelta (test 5)", z1.size() == 5 and z2.size() == 5 and z1[0] >= z1[1] + 31.5 and z2[3] == "stesso")
+	# spostamento (test 13): la scelta a mano resta finché l'incrocio esiste
+	r3.esegui({"comando": "sposta", "id": "x2", "di": [20, 0]})
+	_prova("incroci: spostando un pezzo la scelta a mano dell'incrocio resta (test 13)", _z_incrocio(r3, "lunga|x2#0").size() == 5 and _z_incrocio(r3, "lunga|x2#0")[3] == "stesso")
+	_prove_varchi_proposti()
+
+## v0.30: varco proposto quando una rampa sale su un piano chiuso (test 9, parte editor; la parte di gioco è nel collaudo).
+func _prove_varchi_proposti() -> void:
+	var p := ProgettoEditor.new()
+	p.esegui({"comando": "nuovo", "modello": "base", "nome": "Proposti"})
+	var rp := p.esegui({"comando": "aggiungi", "tipo": "piani", "punti": [[200, 300], [420, 300], [420, 460], [200, 460]]})
+	p.esegui({"comando": "aggiungi", "id": "su", "tipo": "rampe", "punti": [[310, 800], [310, 600], [310, 400]]})
+	var pr := PianiRialzati.varchi_proposti(p.desc, p.pezzo(rp["id"]))
+	_prova("varchi proposti: la rampa che sale sul piano chiuso fa proporre un varco nel bordo", pr.size() == 1 and absf(Vector2(pr[0]["pos"]).y - 460.0) < 1.0)
+	_prova("varchi proposti: CONTROLLA lo dice come informazione", Incroci.controlli(p.desc).any(func(x): return str(x["tipo"]) == "varco"))
+	var r := p.esegui({"comando": "varchi_proposti", "id": rp["id"]})
+	_prova("varchi proposti: confermati, il bordo si apre lì e non si propone più", int(r.get("aperti", 0)) == 1 and PianiRialzati.varchi_proposti(p.desc, p.pezzo(rp["id"])).is_empty() and (p.pezzo(rp["id"])["varchi"] as Array).size() == 1)
+	_prove_compatibilita_incroci()
+
+## profili di gioco, niente innesti, nessuna rampa cambiata. Solo lettura (i file non si toccano).
+## E per il test 14: tavolo con tutti i tipi di incrocio per la caccia agli incastri (user://incroci_caccia.tavolo).
+func _prove_compatibilita_incroci() -> void:
+	var file: Array = []
+	var dir_p := ProjectSettings.globalize_path("res://").path_join("../progetti")
+	var da := DirAccess.open(dir_p)
+	if da != null:
+		for cart in da.get_directories():
+			if FileAccess.file_exists(dir_p.path_join(cart).path_join("tavolo.tavolo")):
+				file.append(dir_p.path_join(cart).path_join("tavolo.tavolo"))
+	var da2 := DirAccess.open("res://tavoli/modelli")
+	if da2 != null:
+		for f in da2.get_files():
+			if f.ends_with(".tavolo"):
+				file.append("res://tavoli/modelli/" + f)
+	var cambiati: Array = []
+	for f in file:
+		var d := FileTavolo.leggi(f)
+		if d.is_empty():
+			continue
+		# la preparazione di sempre (piani, rampe collegate…), poi SOLO il calcolo degli incroci: non deve cambiare niente
+		CurveEditor.prepara_tavolo(d)
+		var prima := var_to_str(d.get("rampe", []).map(func(r): return r.get("punti", [])))
+		Incroci.applica(d)
+		var dopo := var_to_str(d.get("rampe", []).map(func(r): return r.get("punti", [])))
+		var profili: Array = d.get("rampe", []).filter(func(r): return r.has("punti_gioco"))
+		if prima != dopo or not profili.is_empty() or d.has("innesti") or d.has("ordine_rampe"):
+			cambiati.append(f.get_file() if not f.ends_with("tavolo.tavolo") else f.get_base_dir().get_file())
+	_prova("incroci (test 11): %d tavoli vecchi letti, nessuno cambia (rampe, profili, innesti) %s" % [file.size(), str(cambiati)], file.size() >= 4 and cambiati.is_empty())
+	# tavoli per la caccia agli incastri (test 14): uguali, uno SENZA regole e uno CON (ponte sul nastro, comunicante)
+	for con in [false, true]:
+		var p := ProgettoEditor.new()
+		p.esegui({"comando": "nuovo", "modello": "base", "nome": "Caccia"})
+		p.esegui({"comando": "aggiungi", "id": "corsia", "tipo": "nastri", "punti": [[110, 470], [470, 650]], "larghezza": 46})
+		p.esegui({"comando": "aggiungi", "id": "filo", "tipo": "rampe", "punti": [[320, 900], [320, 450], [470, 330], [540, 700]], "altezza_max": 30})
+		p.esegui({"comando": "aggiungi", "id": "ra", "tipo": "rampe", "punti": [[120, 820], [200, 420], [330, 280], [150, 640]], "altezza_max": 45})
+		p.esegui({"comando": "aggiungi", "id": "rb", "tipo": "rampe", "punti": [[90, 300], [260, 330], [300, 600]], "altezza_max": 45})
+		if con:
+			p.esegui({"comando": "incroci_regola", "id": "filo", "modo": "sopra"})
+			for v in p.desc.get("_incroci", []):
+				if str(v["chiave"]).begins_with("ra|rb"):
+					p.esegui({"comando": "incrocio", "chiave": v["chiave"], "modo": "unito", "devia": "alterna"})
+		p.salva_prova(ProjectSettings.globalize_path("user://incroci_caccia_%s.tavolo" % ("con" if con else "senza")))
+		if con:
+			print("   INCROCI_CACCIA ", var_to_str(p.desc.get("_incroci", []).map(func(v): return [v["chiave"], v["modo"], Vector2(v["pos"]).round()])))
+	_prova("incroci (test 14): tavoli di prova senza e con le regole pronti per la caccia agli incastri", FileAccess.file_exists("user://incroci_caccia_con.tavolo"))

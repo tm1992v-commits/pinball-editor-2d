@@ -842,9 +842,15 @@ static func piano(ci: CanvasItem, e: Dictionary, col: Color, p: bool, h: float) 
 	var giro := PackedVector2Array(pts)
 	giro.append(pts[0])
 	var aperto := bool(e.get("bordo_aperto", false))
+	# v0.29: il bordo chiuso si interrompe nei VARCHI
+	var pezzi_bordo: Array = PianiRialzati.bordo_spezzato(e) if not (e.get("varchi", []) as Array).is_empty() else [giro]
 	if p:
 		ci.draw_colored_polygon(pts, col)
-		ci.draw_polyline(giro, col.lightened(0.5) if aperto else Color(0.85, 0.86, 0.9), 2.0, true)
+		if aperto:
+			ci.draw_polyline(giro, col.lightened(0.5), 2.0, true)
+		else:
+			for pb in pezzi_bordo:
+				ci.draw_polyline(pb, Color(0.85, 0.86, 0.9), 2.0, true)
 		return
 	var giu := Vector2(0.0, h * K)
 	# ombra sul tavolo (sotto e a destra del piano)
@@ -880,7 +886,9 @@ static func piano(ci: CanvasItem, e: Dictionary, col: Color, p: bool, h: float) 
 	if aperto:
 		ci.draw_polyline(giro, col.lightened(0.45), 1.6, true)
 	else:
-		tubo(ci, giro, 3.2, 12.0, METALLO, true)
+		for pb in pezzi_bordo:
+			if pb.size() >= 2:
+				tubo(ci, pb, 3.2, 12.0, METALLO, true)
 
 ## Piastra dello spinner (anche quella che gira nel gioco): faccia colorata con riflesso e striscia.
 static func piastra_spinner(ci: CanvasItem, r: Rect2, col: Color, p: bool) -> void:

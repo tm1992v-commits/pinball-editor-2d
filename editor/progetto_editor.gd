@@ -19,6 +19,11 @@ const LISTE := ["muri", "palette", "fionde", "bumper", "bersagli", "buche", "spi
 	"kickback", "campi", "inserti", "porte", "rampe", "captive", "passaggi", "nastri", "decorazioni", "cancelli", "piani", "lame"]
 
 var desc: Dictionary = {}
+## per l'ultima luce (forma, misura, colore, bordo…) vale per le luci NUOVE finché l'editor resta aperto, anche
+## cambiando tavolo. Solo per i comandi dell'utente, non per quelli automatici.
+const RICORDA_LUCE := ["forma", "dim", "colore", "aspetto", "altezza_3d", "bordo", "colore_bordo", "intensita_bordo"]
+static var ultima_luce: Dictionary = {}
+var _chi := "utente"
 var cartella := ""                     # percorso assoluto della cartella .pinproj ("" = mai salvato)
 var modificato := false
 var _annulla: Array = []
@@ -27,6 +32,7 @@ var _ripeti: Array = []
 # ================================================================ comandi
 ## Esegue un comando {"comando": nome, ...parametri}. Restituisce {"ok": bool, "messaggio": testo, ...}.
 func esegui(c: Dictionary, chi := "utente") -> Dictionary:
+	_chi = chi
 	var nome := str(c.get("comando", ""))
 	var r: Dictionary
 	match nome:
@@ -70,6 +76,30 @@ func esegui(c: Dictionary, chi := "utente") -> Dictionary:
 			r = ripristina()
 		"aggiungi":
 			r = _aggiungi(c)
+		"varco":
+			r = _varco(c)
+		"chiudi_varco":
+			r = _chiudi_varco_piano(c)
+		"varchi_proposti":
+			# v0.30: apre nel bordo del piano i varchi dove passano le sue rampe (proposti dall'editor, confermati qui)
+			var tp := trova(str(c.get("id", "")))
+			if tp.is_empty() or tp[0] != "piani":
+				r = {"ok": false, "messaggio": "Scegli un piano rialzato"}
+			else:
+				var pp: Dictionary = desc["piani"][tp[1]]
+				var prop := PianiRialzati.varchi_proposti(desc, pp)
+				if prop.is_empty():
+					r = {"ok": true, "messaggio": "Nessun varco da aprire: le rampe di questo piano passano già da un varco", "aperti": 0}
+				else:
+					_ricorda()
+					var vv: Array = pp.get("varchi", []) if pp.get("varchi") is Array else []
+					for pr in prop:
+						vv.append({"t": snappedf(float(pr["t"]), 0.0001), "larghezza": float(c.get("larghezza", 50.0))})
+					pp["varchi"] = vv
+					_fatto()
+					r = {"ok": true, "messaggio": "Aperti %d varchi nel bordo dove passano le rampe (spostali o chiudili dal pannello del piano)" % prop.size(), "aperti": prop.size()}
+		"incroci_regola", "incrocio", "incroci_automatico":
+			r = _incroci_cmd(c)
 		"elimina":
 			r = _modifica(c, func(lista: Array, i: int): lista.remove_at(i))
 		"imposta":
@@ -199,6 +229,7 @@ func esegui(c: Dictionary, chi := "utente") -> Dictionary:
 			var p := ControlliEditor.varchi(desc)
 			p.append_array(ControlliEditor.piatti(desc))
 			p.append_array(ControlliEditor.incroci(desc))
+			p.append_array(Incroci.controlli(desc))
 			var pz := ControlliEditor.peso(desc, cartella)
 			r = {"ok": true, "messaggio": "%d punti da controllare (varchi, superfici piatte, incroci delle rampe) · %s" % [p.size(), ControlliEditor.testo_peso(pz)], "problemi": p, "peso": pz}
 		_:
@@ -769,6 +800,8 @@ func _aggiungi(c: Dictionary) -> Dictionary:
 		return {"ok": false, "messaggio": "Questo pezzo non si può ancora aggiungere: " + k}
 	var pos := _vec(c.get("pos", Vector2(317, 600)))
 	var e: Dictionary = s["nuovo"].duplicate(true)
+	if k == "inserti" and _chi != "ai":
+		e.merge(ultima_luce.duplicate(true), true)
 	if k == "muri" and c.has("preset"):
 		var pr := CurveEditor.preset(str(c["preset"]), pos)
 		if pr.is_empty():
@@ -850,12 +883,384 @@ func _imposta(c: Dictionary) -> Dictionary:
 	_ricorda()
 	if campo in ["colore", "colore_2", "aspetto", "bordo", "colore_bordo"] and (c.get("valore") == null or str(c.get("valore")) == "") and t[0] != "nastri":
 		desc[t[0]][t[1]].erase(campo)          # torna come il tavolo
+		if t[0] == "inserti":
+			ultima_luce.erase(campo)
 		_fatto()
 		return {"ok": true, "messaggio": "%s: come il tavolo" % campo}
 	var v = _converti(t[0], campo, c.get("valore"))
 	desc[t[0]][t[1]][campo] = v
+	if t[0] == "inserti" and campo in RICORDA_LUCE and _chi != "ai":
+		ultima_luce[campo] = v
 	_fatto()
 	return {"ok": true, "messaggio": "%s = %s" % [campo, str(v)]}
+
+## devo sempre cancellare e ridisegnare i muri»): VARCO NEL MURO.
+## {"comando": "varco", "id": muro, "pos": punto vicino al muro (mm), "larghezza": mm (40), "metti": "" | "cancelli" |
+##  "spinner" | "bersagli"}. Toglie dal muro un tratto largo «larghezza» centrato dove hai cliccato (anche su un tratto
+## curvo): il muro aperto diventa uno solo, quello chiuso si apre. Nel varco mette il pezzo scelto, girato come il muro
+## e largo come il varco. Un solo «annulla».
+const VARCO_PEZZI := ["cancelli", "spinner", "bersagli"]
+
+## Punti fitti di un tratto del muro (dal punto di controllo i al successivo), come li disegna CurveEditor.rigenera.
+static func punti_tratto(m: Dictionary, i: int) -> PackedVector2Array:
+	var c: PackedVector2Array = m["controllo"]
+	var n := c.size()
+	var curvi: Array = m.get("curvi", [])
+	var chiuso: bool = bool(m.get("chiuso", false)) and n >= 3
+	var j := (i + 1) % n
+	var cv := func(k: int) -> bool: return k < curvi.size() and bool(curvi[k])
+	var out := PackedVector2Array([c[i]])
+	if cv.call(i) or cv.call(j):
+		var i0 := i - 1 if cv.call(i) else i
+		if i0 < 0:
+			i0 = n - 1 if chiuso else 0
+		var i3 := j + 1 if cv.call(j) else j
+		if i3 >= n:
+			i3 = i3 - n if chiuso else n - 1
+		var passi := maxi(2, int(ceil(c[i].distance_to(c[j]) / CurveEditor.PASSO)))
+		for k in range(1, passi):
+			out.append(CurveEditor.catmull(c[i0], c[i], c[j], c[i3], float(k) / float(passi)))
+	out.append(c[j])
+	return out
+
+## Punto a distanza «s» (mm, lungo la linea) su una linea spezzata.
+static func _punto_a(pts: PackedVector2Array, s: float) -> Vector2:
+	for k in pts.size() - 1:
+		var l := pts[k].distance_to(pts[k + 1])
+		if s <= l:
+			return pts[k].lerp(pts[k + 1], s / maxf(l, 0.0001))
+		s -= l
+	return pts[pts.size() - 1]
+
+## Dove cadrebbe il varco: {"tratto": i, "dist": distanza dal muro, "a", "b": estremi, "s1", "s2", "lung": lunghezza del
+## tratto, "linea": punti del muro tolti (per l'anteprima)} oppure {} se il muro non ha tratti.
+static func trova_varco(m: Dictionary, pos: Vector2, larghezza: float) -> Dictionary:
+	if not m.has("controllo") or m["controllo"].size() < 2:
+		return {}
+	var n: int = m["controllo"].size()
+	var ultimo := n if (bool(m.get("chiuso", false)) and n >= 3) else n - 1
+	var meglio := {}
+	for i in ultimo:
+		var pts := punti_tratto(m, i)
+		var acc := 0.0
+		for k in pts.size() - 1:
+			var q := Geometry2D.get_closest_point_to_segment(pos, pts[k], pts[k + 1])
+			var d := q.distance_to(pos)
+			if meglio.is_empty() or d < float(meglio["dist"]):
+				meglio = {"tratto": i, "dist": d, "s": acc + pts[k].distance_to(q), "pts": pts}
+			acc += pts[k].distance_to(pts[k + 1])
+	if meglio.is_empty():
+		return {}
+	var pts2: PackedVector2Array = meglio["pts"]
+	var lung := 0.0
+	for k in pts2.size() - 1:
+		lung += pts2[k].distance_to(pts2[k + 1])
+	var mezzo := minf(larghezza, lung) * 0.5
+	var s1 := clampf(float(meglio["s"]) - mezzo, 0.0, lung - 2.0 * mezzo)
+	var s2 := s1 + 2.0 * mezzo
+	var linea := PackedVector2Array([_punto_a(pts2, s1)])
+	var acc2 := 0.0
+	for k in range(1, pts2.size() - 1):
+		acc2 += pts2[k - 1].distance_to(pts2[k])
+		if acc2 > s1 and acc2 < s2:
+			linea.append(pts2[k])
+	linea.append(_punto_a(pts2, s2))
+	return {"tratto": meglio["tratto"], "dist": meglio["dist"], "a": linea[0], "b": linea[linea.size() - 1], "s1": s1, "s2": s2, "lung": lung, "linea": linea}
+
+## v0.29: varco nel BORDO di un PIANO RIALZATO. Dove cadrebbe: {"dist", "t" (0-1 sul giro), "a", "b", "linea",
+## "fuori" (direzione verso l'esterno del piano, a metà varco)} oppure {}.
+const VARCO_PIANO := ["rampa_giu", "rampa_su", "nastro_giu", "nastro_su"]
+static func trova_varco_piano(p: Dictionary, pos: Vector2, larghezza: float) -> Dictionary:
+	var g := PianiRialzati.giro(p)
+	if g.size() < 4:
+		return {}
+	var tot := PianiRialzati.lunghezza(g)
+	var meglio := {}
+	var acc := 0.0
+	for k in g.size() - 1:
+		var q := Geometry2D.get_closest_point_to_segment(pos, g[k], g[k + 1])
+		var d := q.distance_to(pos)
+		if meglio.is_empty() or d < float(meglio["dist"]):
+			meglio = {"dist": d, "s": acc + g[k].distance_to(q)}
+		acc += g[k].distance_to(g[k + 1])
+	var mezzo := minf(larghezza, tot * 0.9) * 0.5
+	var sc := float(meglio["s"])
+	var linea := PackedVector2Array([PianiRialzati.punto_giro(g, sc - mezzo)])
+	var cum := 0.0
+	for giri in [-tot, 0.0, tot]:
+		cum = giri
+		for k in g.size() - 1:
+			if cum > sc - mezzo and cum < sc + mezzo:
+				linea.append(g[k])
+			cum += g[k].distance_to(g[k + 1])
+	linea.append(PianiRialzati.punto_giro(g, sc + mezzo))
+	var a := linea[0]
+	var b := linea[linea.size() - 1]
+	var m := (a + b) * 0.5
+	var dirv := (b - a).normalized() if a.distance_to(b) > 0.1 else Vector2.RIGHT
+	var fuori := Vector2(dirv.y, -dirv.x)
+	var zona := g.slice(0, g.size() - 1)
+	if Geometry2D.is_point_in_polygon(m + fuori * 6.0, zona):
+		fuori = -fuori
+	return {"dist": meglio["dist"], "t": fposmod(sc / maxf(tot, 0.001), 1.0), "a": a, "b": b, "linea": linea, "fuori": fuori}
+
+func _varco_piano(c: Dictionary, t: Array) -> Dictionary:
+	var e: Dictionary = desc["piani"][t[1]]
+	var metti := str(c.get("metti", ""))
+	if metti != "" and not metti in VARCO_PIANO:
+		return {"ok": false, "messaggio": "Nel varco del piano si può attaccare: rampa o nastro, in salita o in discesa"}
+	var larghezza := maxf(float(c.get("larghezza", 50.0)), 10.0)
+	var v := trova_varco_piano(e, _vec(c.get("pos", Vector2.ZERO)), larghezza)
+	if v.is_empty():
+		return {"ok": false, "messaggio": "Non trovo il bordo del piano"}
+	_ricorda()
+	var varchi: Array = e.get("varchi", []) if e.get("varchi") is Array else []
+	varchi.append({"t": snappedf(float(v["t"]), 0.0001), "larghezza": larghezza})
+	e["varchi"] = varchi
+	var out := {"ok": true, "piano": e["id"]}
+	var a: Vector2 = v["a"]
+	var b: Vector2 = v["b"]
+	var m := (a + b) * 0.5
+	var fuori: Vector2 = v["fuori"]
+	var h := float(e.get("altezza", 40.0))
+	var testo := ""
+	if metti != "":
+		# il pezzo attaccato: parte 25 mm dentro il piano e arriva 170 mm fuori (poi lo allunghi o lo pieghi tu)
+		var dentro := (m - fuori * 25.0).snapped(Vector2(0.5, 0.5))
+		var mezzo_p := (m + fuori * 70.0).snapped(Vector2(0.5, 0.5))
+		var lontano := (m + fuori * 170.0).snapped(Vector2(0.5, 0.5))
+		var giu := metti.ends_with("_giu")
+		var pts: Array = [dentro, mezzo_p, lontano] if giu else [lontano, mezzo_p, dentro]
+		var cmd := {"tipo": "rampe" if metti.begins_with("rampa") else "nastri", "punti": pts}
+		if metti.begins_with("rampa"):
+			cmd["altezza_max"] = h
+		else:
+			cmd["larghezza"] = maxf(larghezza - 6.0, 30.0)
+			cmd["altezze"] = [h, h * 0.5, 0.0] if giu else [0.0, h * 0.5, h]
+		var ra := _aggiungi(cmd)
+		if ra.get("ok", false):
+			_annulla.pop_back()          # un solo «annulla» per varco e pezzo attaccato
+			out["id"] = ra["id"]
+			testo = {"rampa_giu": " con una RAMPA che scende", "rampa_su": " con una RAMPA che sale sul piano", "nastro_giu": " con un NASTRO che scende", "nastro_su": " con un NASTRO che sale sul piano"}[metti]
+	_fatto()
+	out["messaggio"] = "Varco di %.0f mm aperto nel bordo del piano «%s»%s. Allunga o piega il pezzo coi suoi quadratini." % [a.distance_to(b), str(e.get("nome", e["id"])), testo]
+	return out
+
+## v0.30: INCROCI (Incroci.gd).
+##  {"comando": "incroci_regola", "id": rampa/binario/nastro, "modo": ""|"sopra"|"sotto"|"stesso",
+##   "margine"?, "salita"?, "piano"?: mm} = regola generale del percorso (le scelte dei singoli incroci restano);
+##  {"comando": "incrocio", "chiave": "A|B#n", "modo"?: "a_sopra"|"a_sotto"|"b_sopra"|"b_sotto"|"stesso"|"" (""= torna
+##   automatico), "quota"?: mm o null (null = toglie la quota a mano), "bloccato"?: bool};
+##  {"comando": "incroci_automatico", "id"?: percorso} = toglie le scelte a mano dei suoi incroci (senza id: di tutti).
+func _incroci_cmd(c: Dictionary) -> Dictionary:
+	var nome := str(c["comando"])
+	if nome == "incroci_regola":
+		var t := trova(str(c.get("id", "")))
+		if t.is_empty() or not t[0] in ["rampe", "nastri"]:
+			return {"ok": false, "messaggio": "La regola degli incroci vale per rampe, binari a fili e nastri"}
+		var modo := str(c.get("modo", ""))
+		if not modo in ["", "sopra", "sotto", "stesso"]:
+			return {"ok": false, "messaggio": "Regola sconosciuta: " + modo}
+		_ricorda()
+		var e: Dictionary = desc[t[0]][t[1]]
+		if modo == "":
+			e.erase("incroci_modo")
+		else:
+			e["incroci_modo"] = modo
+		for k in [["margine", "incroci_margine", 5.0, 200.0], ["salita", "incroci_salita", 20.0, 600.0], ["piano", "incroci_piano", 0.0, 400.0]]:
+			if c.has(k[0]):
+				e[k[1]] = clampf(float(c[k[0]]), k[2], k[3])
+		_fatto()
+		var testo: String = {"": "nessuna regola (altezze come le hai disegnate)", "sopra": "passa SOPRA gli altri percorsi", "sotto": "passa SOTTO gli altri percorsi", "stesso": "si incrocia alla STESSA ALTEZZA"}[modo]
+		return {"ok": true, "messaggio": "«%s»: %s. Gli incroci che hai deciso uno per uno restano come sono." % [e["id"], testo]}
+	if not desc.get("incroci") is Dictionary:
+		desc["incroci"] = {}
+	if nome == "incroci_automatico":
+		var id := str(c.get("id", ""))
+		var via: Array = desc["incroci"].keys().filter(func(k): return id == "" or str(k).begins_with(id + "|") or str(k).contains("|" + id + "#"))
+		if via.is_empty():
+			return {"ok": true, "messaggio": "Nessun incrocio deciso a mano" + (" per «%s»" % id if id != "" else ""), "tolti": 0}
+		_ricorda()
+		for k in via:
+			desc["incroci"].erase(k)
+		_fatto()
+		return {"ok": true, "messaggio": "%d incroci tornati automatici (seguono di nuovo le regole delle rampe)" % via.size(), "tolti": via.size()}
+	var chiave := str(c.get("chiave", ""))
+	if chiave == "" or not chiave.contains("|"):
+		return {"ok": false, "messaggio": "Incrocio sconosciuto"}
+	var sc: Dictionary = desc["incroci"].get(chiave, {}).duplicate() if desc["incroci"].get(chiave) is Dictionary else {}
+	if c.has("modo"):
+		var m := str(c["modo"])
+		if not m in ["", "a_sopra", "a_sotto", "b_sopra", "b_sotto", "stesso", "unito"]:
+			return {"ok": false, "messaggio": "Scelta sconosciuta: " + m}
+		if m == "":
+			sc.erase("modo")
+			sc.erase("quota")
+		else:
+			sc["modo"] = m
+	if c.has("devia"):
+		var dv := str(c["devia"])
+		if not dv in ["alterna", "sempre", "mai", "comandato"]:
+			return {"ok": false, "messaggio": "Deviatore: alterna, sempre, mai o comandato"}
+		sc["devia"] = dv
+	if c.has("quota"):
+		if c["quota"] == null or str(c["quota"]) == "":
+			sc.erase("quota")
+		else:
+			sc["quota"] = clampf(float(c["quota"]), 0.0, 300.0)
+	if c.has("bloccato"):
+		if bool(c["bloccato"]):
+			sc["bloccato"] = true
+		else:
+			sc.erase("bloccato")
+	_ricorda()
+	if sc.is_empty():
+		desc["incroci"].erase(chiave)
+	else:
+		desc["incroci"][chiave] = sc
+	_fatto()
+	var parti := chiave.split("#")[0].split("|")
+	var testo2 := "torna automatico (segue le regole delle rampe)"
+	match str(sc.get("modo", "")):
+		"a_sopra": testo2 = "«%s» passa SOPRA «%s»" % [parti[0], parti[1]]
+		"a_sotto": testo2 = "«%s» passa SOTTO «%s»" % [parti[0], parti[1]]
+		"b_sopra": testo2 = "«%s» passa SOPRA «%s»" % [parti[1], parti[0]]
+		"b_sotto": testo2 = "«%s» passa SOTTO «%s»" % [parti[1], parti[0]]
+		"stesso": testo2 = "alla stessa altezza (ognuna resta sulla sua strada)"
+		"unito": testo2 = "COMUNICANTI: la pallina può cambiare strada (deviatore: %s)" % str(sc.get("devia", "alterna"))
+	if bool(sc.get("bloccato", false)):
+		testo2 += " · bloccato: l'automatico non lo tocca"
+	return {"ok": true, "messaggio": "Incrocio: " + testo2}
+
+## v0.29: chiude un varco del piano (il più vicino al punto).
+func _chiudi_varco_piano(c: Dictionary) -> Dictionary:
+	var t := trova(str(c.get("id", "")))
+	if t.is_empty() or t[0] != "piani":
+		return {"ok": false, "messaggio": "Scegli un piano rialzato"}
+	var e: Dictionary = desc["piani"][t[1]]
+	var varchi: Array = e.get("varchi", []) if e.get("varchi") is Array else []
+	var indice := int(c.get("indice", varchi.size() - 1))
+	if indice < 0 or indice >= varchi.size():
+		return {"ok": false, "messaggio": "Questo piano non ha varchi"}
+	_ricorda()
+	varchi.remove_at(indice)
+	e["varchi"] = varchi
+	_fatto()
+	return {"ok": true, "messaggio": "Varco chiuso (il pezzo attaccato resta: se non serve, eliminalo)"}
+
+func _varco(c: Dictionary) -> Dictionary:
+	var t := trova(str(c.get("id", "")))
+	if not t.is_empty() and t[0] == "piani":
+		return _varco_piano(c, t)
+	if t.is_empty() or t[0] != "muri":
+		return {"ok": false, "messaggio": "Il varco si apre in un MURO o nel bordo di un PIANO RIALZATO: sceglilo"}
+	var e: Dictionary = desc["muri"][t[1]]
+	if not e.has("controllo"):
+		return {"ok": false, "messaggio": "Questo muro non ha punti da tagliare"}
+	var metti := str(c.get("metti", ""))
+	if metti != "" and not metti in VARCO_PEZZI:
+		return {"ok": false, "messaggio": "Nel varco si può mettere: cancelletto, spinner o bersaglio"}
+	var v := trova_varco(e, _vec(c.get("pos", Vector2.ZERO)), maxf(float(c.get("larghezza", 40.0)), 4.0))
+	if v.is_empty():
+		return {"ok": false, "messaggio": "Non trovo il tratto del muro"}
+	var cp: PackedVector2Array = e["controllo"]
+	var n := cp.size()
+	var chiuso: bool = bool(e.get("chiuso", false)) and n >= 3
+	var curvi: Array = e.get("curvi", CurveEditor._lista(n, false)).duplicate()
+	var fio: Array = e.get("fionda", CurveEditor._lista(n, false)).duplicate()
+	while curvi.size() < n:
+		curvi.append(false)
+	while fio.size() < n:
+		fio.append(false)
+	var i: int = v["tratto"]
+	var j := (i + 1) % n
+	var taglia_a := float(v["s1"]) > 0.5               # resta un pezzetto prima del varco
+	var taglia_b := float(v["s2"]) < float(v["lung"]) - 0.5
+	# parte A: dall'inizio fino al varco · parte B: dal varco alla fine (per il muro chiuso: una parte sola, che gira)
+	var pa := PackedVector2Array()
+	var ca: Array = []
+	var fa: Array = []
+	var pb := PackedVector2Array()
+	var cb: Array = []
+	var fb: Array = []
+	if taglia_b:
+		pb.append(v["b"])
+		cb.append(false)
+		fb.append(fio[i])
+	# muro aperto: dal punto dopo il varco alla fine; muro chiuso: tutto il giro, dal punto dopo il varco a quello prima
+	var quanti := n - j if not chiuso else n
+	for k in quanti:
+		var kk := (j + k) % n
+		pb.append(cp[kk])
+		cb.append(curvi[kk])
+		fb.append(fio[kk])
+	if chiuso:
+		if taglia_a:
+			pb.append(v["a"])
+			cb.append(false)
+			fb.append(false)
+		fb[fb.size() - 1] = false
+	else:
+		for k in range(0, i + 1):
+			pa.append(cp[k])
+			ca.append(curvi[k])
+			fa.append(fio[k])
+		if taglia_a:
+			pa.append(v["a"])
+			ca.append(false)
+			fa.append(false)
+		if not fa.is_empty():
+			fa[fa.size() - 1] = false
+	_ricorda()
+	var muri_fatti: Array = []
+	var resto := {}
+	for campo in e:
+		if not campo in ["controllo", "curvi", "fionda", "punti", "fionde_tratti", "id", "chiuso"]:
+			resto[campo] = e[campo]
+	var parti: Array = [[pa, ca, fa], [pb, cb, fb]] if not chiuso else [[pb, cb, fb]]
+	var primo := true
+	var dove: int = t[1]
+	for parte in parti:
+		var pts: PackedVector2Array = parte[0]
+		if pts.size() < 2:
+			continue
+		var m: Dictionary = e if primo else resto.duplicate(true)
+		if not primo:
+			m["id"] = nuovo_id("muri")
+			desc["muri"].insert(dove + 1, m)
+		m["controllo"] = pts
+		m["curvi"] = parte[1]
+		m["fionda"] = parte[2]
+		m["chiuso"] = false
+		CurveEditor.rigenera(m)
+		muri_fatti.append(m["id"])
+		primo = false
+	if primo:
+		# il varco ha preso tutto il muro (un solo tratto, corto): il muro sparisce
+		desc["muri"].remove_at(dove)
+	var out := {"ok": true, "muri": muri_fatti}
+	var a: Vector2 = v["a"]
+	var b: Vector2 = v["b"]
+	var largo := a.distance_to(b)
+	if metti != "":
+		var el: Dictionary = SchedeEditor.scheda(metti)["nuovo"].duplicate(true)
+		el["id"] = nuovo_id(metti)
+		el["pos"] = ((a + b) * 0.5).snapped(Vector2(0.5, 0.5))
+		el["angolo"] = wrapf((b - a).angle(), -PI / 2.0, PI / 2.0)
+		if metti == "bersagli":
+			el["dim"] = Vector2(snappedf(largo, 0.5), Vector2(el.get("dim", Vector2(24, 8))).y)
+		else:
+			el["larghezza"] = snappedf(largo, 0.5)
+		if e.has("livello"):
+			el["livello"] = e["livello"]
+		if not desc.get(metti) is Array:
+			desc[metti] = []
+		desc[metti].append(el)
+		out["id"] = el["id"]
+	_fatto()
+	var nome_p: String = {"": "", "cancelli": " con un CANCELLETTO", "spinner": " con uno SPINNER", "bersagli": " con un BERSAGLIO"}[metti]
+	out["messaggio"] = "Varco di %.0f mm aperto nel muro%s%s" % [largo, nome_p, " (il muro è diventato due)" if muri_fatti.size() == 2 else ""]
+	return out
 
 ## IMMAGINE PROPRIA su un pezzo (v0.6). Campi del comando (tutti facoltativi tranne "id"):
 ##  "file": percorso di un'immagine (PNG/JPG/WEBP) da mettere sul pezzo (entra nel file del tavolo, max 1024 px)

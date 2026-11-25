@@ -4,6 +4,8 @@ class_name Pallina
 extends RigidBody2D
 
 signal binario_finito(pallina: Pallina, binario: Binario, completato: bool)
+## v0.30: la pallina passa (in avanti) su un innesto del binario: il tavolo decide se cambia strada (cambia_binario)
+signal innesto_passato(pallina: Pallina, binario: Binario, indice: int)
 
 var _spinte: Array = []
 var _aggiunte := Vector2.ZERO
@@ -99,6 +101,15 @@ func sali_su(b: Binario, velocita: float, laterale := 0.0, da := 0.0, inverso :=
 	_spinte.clear()
 	_aggiunte = Vector2.ZERO
 
+## v0.30: passa su un altro binario nel punto s (incrocio comunicante), con la stessa velocità, in avanti.
+func cambia_binario(b: Binario, s: float) -> void:
+	binario = b
+	_s = clampf(s, 0.0, b.lunghezza)
+	_v = absf(_v)
+	_inverso = false
+	_laterale = 0.0
+	_lat_frazione = 0.0
+
 ## La pallina sparisce (entra in una buca o nella cassa): ferma, invisibile, senza collisioni.
 func nascondi(p: Vector2) -> void:
 	binario = null
@@ -178,7 +189,17 @@ func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
 			binario = b.precedente
 			_s = binario.lunghezza + _s
 			b = binario
+		var s_prima := _s
 		_s += _v * dt
+		# v0.30: incrocio comunicante (innesto) superato in avanti: il deviatore del tavolo può cambiare binario
+		if _v > 0.0 and not b.innesti.is_empty():
+			for k in b.innesti.size():
+				var sk := float(b.innesti[k]["s"])
+				if s_prima < sk and _s >= sk:
+					innesto_passato.emit(self, b, k)
+					if binario != b:
+						b = binario
+						break
 		altezza = b.altezza(clampf(_s, 0.0, b.lunghezza))
 		var sc := clampf(_s, 0.0, b.lunghezza)
 		var lat := _laterale * clampf(1.0 - (b.lunghezza - sc if _inverso else sc) / CENTRO_RAMPA, 0.0, 1.0)

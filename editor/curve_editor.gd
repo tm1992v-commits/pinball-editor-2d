@@ -95,6 +95,8 @@ static func prepara_tavolo(desc: Dictionary) -> void:
 	PianiRialzati.genera(desc)
 	# v0.17.2: pallina prigioniera (canale, fermo, bersaglio)
 	PianiRialzati.genera_captive(desc)
+	# v0.30: incroci tra rampe, binari e nastri (sopra / sotto / stessa altezza): profili di gioco delle rampe
+	Incroci.applica(desc)
 
 ## Forme pronte da disegnare con un clic (preset della libreria).
 static func preset(nome: String, centro: Vector2) -> Dictionary:

@@ -203,7 +203,7 @@ const LIBERO := 32.0
 
 static func _campioni_rampa(r: Dictionary) -> Array:
 	var out: Array = []          # [Vector2, altezza]
-	var pr: Array = r.get("punti", [])
+	var pr: Array = r["punti_gioco"] if r.get("punti_gioco") is Array and not r["punti_gioco"].is_empty() else r.get("punti", [])
 	for i in range(pr.size() - 1):
 		var a: Vector3 = pr[i]
 		var b: Vector3 = pr[i + 1]
@@ -221,6 +221,11 @@ static func incroci(desc: Dictionary) -> Array:
 	var rampe: Array = desc.get("rampe", []).filter(func(r): return r is Dictionary and r.get("punti", []).size() >= 2)
 	var camp: Array = rampe.map(func(r): return _campioni_rampa(r))
 	var visti := {}
+	# v0.30: gli incroci scelti ALLA STESSA ALTEZZA sono voluti (ognuna resta sulla sua strada): non sono un problema
+	for v in desc.get("_incroci", []):
+		if str(v.get("modo", "")) in ["stesso", "unito"]:
+			visti["%s|%s" % [v.get("rampa_a", ""), v.get("rampa_b", "")]] = true
+			visti["%s|%s" % [v.get("rampa_b", ""), v.get("rampa_a", "")]] = true
 	for i in rampe.size():
 		for j in range(i + 1, rampe.size()):
 			var ri: Dictionary = rampe[i]
@@ -246,7 +251,7 @@ static func incroci(desc: Dictionary) -> Array:
 					if absf(hi - hj) < LIBERO and not visti.has(chiave):
 						visti[chiave] = true
 						out.append({"tipo": "incrocio", "livello": "potenziale", "pos": x, "pezzi": [str(ri["id"]), str(rj["id"])],
-							"testo": "«%s» e «%s» si incrociano a %.0f e %.0f mm d'altezza: servono almeno %.0f mm di differenza (nel gioco la pallina di quella sotto si vedrebbe passare attraverso quella sopra). Alza una delle due nel punto d'incrocio." % [_nome(ri), _nome(rj), minf(hi, hj), maxf(hi, hj), LIBERO]})
+							"testo": "«%s» e «%s» si incrociano a %.0f e %.0f mm d'altezza: servono almeno %.0f mm di differenza (nel gioco la pallina di quella sotto si vedrebbe passare attraverso quella sopra). Scegli la rampa e in «INCROCI» dille di passare sopra o sotto (o clicca il segnalino dell'incrocio)." % [_nome(ri), _nome(rj), minf(hi, hj), maxf(hi, hj), LIBERO]})
 	# rampe sopra i piani rialzati
 	var livelli = desc.get("livelli", {})
 	if livelli is Dictionary:

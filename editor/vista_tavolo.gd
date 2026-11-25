@@ -39,12 +39,25 @@ var selezionati: Array = []            # tutti i pezzi scelti (Maiusc+clic, rett
 var _rett_da := Vector2(-1, -1)        # selezione a rettangolo (mm), -1 = nessuna
 var _centri0 := {}                     # id -> centro all'inizio del trascinamento di gruppo
 var da_inserire := ""                  # tipo di pezzo scelto nella libreria ("" = selezione)
+## v0.29: strumento «varco nel muro» (da_inserire = "varco"): cosa mettere nel varco e quanto è largo (mm)
+var varco_metti := "cancelli"
+var varco_larghezza := 46.0
+var varco_su := "muri"                  # "muri" oppure "piani" (bordo del piano rialzato)
+## v0.30: incrocio scelto col clic sul suo segnalino ("" = nessuno)
+var incrocio_scelto := ""
+var _varco_mouse := Vector2(-9999, -9999)
 var problemi: Array = []
 var evidenziato := Vector2(-1, -1)     # problema scelto nell'elenco
 var _muro_nuovo := PackedVector2Array()
 var _muro_nuovo_curvi: Array = []
 var punto := -1                        # punto di controllo scelto (muri): per Curvo / Fionda nel pannello
 var _trascina := ""                    # "pezzo" | "punto" | "vista"
+## v0.29: com'era l'immagine quando è iniziato il trascinamento di una sua maniglia (il cambio di misura o di
+## rotazione si calcola rispetto a quel momento, così funziona anche con le maniglie riportate dentro lo schermo).
+var _img_avvio := {}
+## v0.29: com'era il PEZZO all'inizio del trascinamento di una sua maniglia (copia completa: a ogni movimento si riparte
+## da lì, così ruotare e ingrandire non accumulano errori).
+var _pz_avvio := {}
 var _punto_trascinato := -1
 var _ultimo_mm := Vector2.ZERO
 var _inizio_trascina := Vector2.ZERO
@@ -53,12 +66,41 @@ var _font: Font
 
 var _barra_disegno: PanelContainer
 var _testo_disegno: Label
+var _scorri_x: HScrollBar
+var _scorri_y: VScrollBar
+var _misura_prima := Vector2.ZERO
 
 func _ready() -> void:
 	clip_contents = true
 	focus_mode = Control.FOCUS_ALL
 	_font = get_theme_default_font()
-	resized.connect(adatta)
+	# ricostruito, cambiava larghezza e la vista si riadattava da capo. Ora si riadatta solo la prima volta; dopo il
+	# punto del tavolo al centro resta al centro.
+	resized.connect(_ridimensionata)
+	_scorri_x = HScrollBar.new()
+	_scorri_y = VScrollBar.new()
+	for sb in [_scorri_x, _scorri_y]:
+		sb.step = 0.0
+		sb.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		add_child(sb)
+	_scorri_x.anchor_left = 0.0
+	_scorri_x.anchor_right = 1.0
+	_scorri_x.anchor_top = 1.0
+	_scorri_x.anchor_bottom = 1.0
+	_scorri_x.offset_top = -14.0
+	_scorri_x.offset_right = -14.0
+	_scorri_y.anchor_left = 1.0
+	_scorri_y.anchor_right = 1.0
+	_scorri_y.anchor_top = 0.0
+	_scorri_y.anchor_bottom = 1.0
+	_scorri_y.offset_left = -14.0
+	_scorri_y.offset_bottom = -14.0
+	_scorri_x.value_changed.connect(func(v: float):
+		origine.x = -v * scala
+		queue_redraw())
+	_scorri_y.value_changed.connect(func(v: float):
+		origine.y = -v * scala
+		queue_redraw())
 	# per terminare»): pulsanti grandi Fine / Annulla e cosa fare
 	_barra_disegno = PanelContainer.new()
 	_barra_disegno.position = Vector2(12, 12)
@@ -155,6 +197,36 @@ func _piazza_barra() -> void:
 	var a_sinistra := primo.x > size.x * 0.5
 	_barra_disegno.position = Vector2(m if a_sinistra else maxf(size.x - dim.x - m, 0.0), basso)
 
+func _ridimensionata() -> void:
+	if _misura_prima == Vector2.ZERO or progetto == null or progetto.desc.is_empty():
+		adatta()
+	else:
+		origine += (size - _misura_prima) * 0.5
+		queue_redraw()
+	_misura_prima = size
+
+## v0.29: aggiorna le barre di scorrimento con la parte del tavolo che si vede (in mm). Il campo comprende il tavolo
+## con un margine di 300 mm e la parte vista adesso, così la barra non salta mai.
+func _aggiorna_scorrimento() -> void:
+	if _scorri_x == null:
+		return
+	var vis := progetto != null and not progetto.desc.is_empty()
+	_scorri_x.visible = vis
+	_scorri_y.visible = vis
+	if not vis:
+		return
+	var dim: Vector2 = progetto.desc.get("dimensioni", Vector2(635, 1240))
+	var da := mm(Vector2.ZERO)
+	var vista_mm := size / maxf(scala, 0.001)
+	var campo := Rect2(Vector2(-300, -300), dim + Vector2(600, 600)).merge(Rect2(da, vista_mm))
+	for coppia in [[_scorri_x, 0], [_scorri_y, 1]]:
+		var sb: ScrollBar = coppia[0]
+		var a: int = coppia[1]
+		sb.min_value = campo.position[a]
+		sb.max_value = campo.end[a]
+		sb.page = vista_mm[a]
+		sb.set_value_no_signal(da[a])
+
 ## Punto del tavolo (mm) al centro della vista: dove nascono gli elementi nuovi.
 func centro_vista() -> Vector2:
 	return ((size * 0.5 - origine) / maxf(scala, 0.001)).snapped(Vector2(5, 5))
@@ -180,6 +252,165 @@ func mm(px: Vector2) -> Vector2:
 
 func px(m: Vector2) -> Vector2:
 	return origine + m * scala
+
+## lato basso e pallino di rotazione FUORI dallo schermo. Le maniglie si disegnano e si prendono sempre dentro la
+## vista (a 14 px dal bordo), nel punto più vicino a dove sarebbero.
+func _vis(q: Vector2) -> Vector2:
+	# a destra e in basso resta libero il posto delle barre di scorrimento
+	return Vector2(clampf(q.x, 14.0, maxf(14.0, size.x - 28.0)), clampf(q.y, 14.0, maxf(14.0, size.y - 28.0)))
+
+## Maniglia dell'immagine in coordinate dello schermo (riportata dentro la vista).
+func _pm(q: Vector2) -> Vector2:
+	return _vis(px(q))
+
+## v0.29: fotografia dell'immagine all'inizio del trascinamento di una maniglia.
+func _foto_immagine(m: Vector2) -> void:
+	var mi := _maniglie_immagine()
+	if mi.is_empty():
+		_img_avvio = {}
+		return
+	var im: Dictionary = mi[2]["immagine"]
+	var vl: Vector2 = (mm(_pm(_punto_maniglia(mi, _maniglia_in(m)))) - Vector2(mi[0])).rotated(-float(mi[6]))
+	_img_avvio = {"c": Vector2(mi[0]), "rot": float(mi[6]), "m": m, "v": vl,
+		"dim_im": Vector2(im.get("dim", Vector2(40, 40))), "dim_e": Vector2(mi[2].get("dim", Vector2(100, 100))) if mi[5] else Vector2.ZERO}
+
+func _punto_maniglia(mi: Array, man: String) -> Vector2:
+	return Vector2(mi[{"ruota": 4, "angolo": 1, "lato_x": 8, "lato_y": 9}.get(man, 0)])
+
+## scrivendo i numeri»): MANIGLIE DEL PEZZO scelto, come quelle delle immagini. Pallino sopra = ruota (Ctrl = 15°),
+## quadratino nell'angolo = ingrandisce tutto, maniglia a destra = più largo/stretto, maniglia sotto = più lungo/corto.
+## Solo le maniglie che hanno senso per quel pezzo (es. il bumper tondo non ruota). Se il pezzo ha un'immagine
+## valgono le maniglie dell'immagine.
+## Ritorna {"c", "rot", "mezza", "ruota", "angolo", "lato_x", "lato_y" (posizioni in mm o null), "k", "e"} oppure {}.
+const RUOTANO := ["bersagli", "spinner", "cancelli", "captive", "inserti", "muri", "rampe", "nastri", "piani", "porte", "fionde"]
+func _maniglie_pezzo() -> Dictionary:
+	if selezionato == "" or selezionati.size() > 1 or bloccato(selezionato) or da_inserire != "" or disegno_in_corso():
+		return {}
+	if not _maniglie_immagine().is_empty():
+		return {}
+	var t := progetto.trova(selezionato)
+	if t.is_empty() or t[0] in ["palette", "lame", "decorazioni"]:
+		return {}
+	var k: String = t[0]
+	var e: Dictionary = progetto.desc[k][t[1]]
+	var punti := SchedeEditor.campo_punti(k) != "" and k != "captive"
+	var c: Vector2
+	var rot := 0.0
+	var mezza: Vector2
+	if punti:
+		var pts := ProgettoEditor.punti_2d(k, e)
+		if pts.size() < 2:
+			return {}
+		var r := Rect2(pts[0], Vector2.ZERO)
+		for q in pts:
+			r = r.expand(q)
+		c = r.get_center()
+		mezza = r.size * 0.5
+	else:
+		c = ProgettoEditor.centro(k, e)
+		mezza = PittorePezzi.misura_pezzo(k, e) * 0.5
+		if k == "inserti":
+			rot = float(e.get("angolo_luce", 0.0))
+		elif e.has("angolo"):
+			rot = float(e["angolo"])
+	# un po' fuori dal pezzo, così non coprono i punti dei muri e si prendono bene anche sui pezzi piccoli
+	var fuori := 12.0 / maxf(scala, 0.01)
+	var mz := mezza + Vector2(fuori, fuori)
+	var out := {"c": c, "rot": rot, "mezza": mezza, "k": k, "e": e, "punti": punti, "ruota": null, "angolo": c + mz.rotated(rot), "lato_x": null, "lato_y": null}
+	if k in RUOTANO:
+		out["ruota"] = c + Vector2(0, -(mz.y + 22.0 / maxf(scala, 0.01))).rotated(rot)
+	var allarga := e.get("dim") is Vector2 or e.has("larghezza") or k == "bumper" or punti
+	if allarga and (not punti or mezza.x > 1.0):
+		out["lato_x"] = c + Vector2(mz.x, 0).rotated(rot)
+	if (e.get("dim") is Vector2 or k == "bumper" or punti) and (not punti or mezza.y > 1.0):
+		out["lato_y"] = c + Vector2(0, mz.y).rotated(rot)
+	return out
+
+## Allunga il pezzo in una sola direzione (fattore f lungo x o y del pezzo) intorno al centro c.
+static func stira_misura(k: String, e: Dictionary, in_x: bool, f: float, c: Vector2, rot: float, punti: bool) -> void:
+	if punti:
+		stira_pezzo(k, e, Vector2(f, 1.0) if in_x else Vector2(1.0, f), c, rot)
+	elif e.get("dim") is Vector2:
+		var d: Vector2 = e["dim"]
+		e["dim"] = (Vector2(maxf(d.x * f, 2.0), d.y) if in_x else Vector2(d.x, maxf(d.y * f, 2.0))).snapped(Vector2(0.5, 0.5))
+	elif e.has("larghezza") and in_x:
+		e["larghezza"] = snappedf(maxf(float(e["larghezza"]) * f, 4.0), 0.5)
+	elif k == "bumper":
+		if in_x:
+			e["raggio"] = snappedf(maxf(float(e["raggio"]) * f, 4.0), 0.5)
+		else:
+			e["raggio_y"] = snappedf(maxf(float(e.get("raggio_y", e["raggio"])) * f, 4.0), 0.5)
+
+func _maniglia_pezzo_in(m: Vector2) -> String:
+	var mp := _maniglie_pezzo()
+	if mp.is_empty():
+		return ""
+	for nome in ["ruota", "angolo", "lato_x", "lato_y"]:
+		if mp[nome] != null and px(m).distance_to(_pm(mp[nome])) < 10.0:
+			return "pz_" + nome
+	return ""
+
+func _inizia_maniglia_pezzo(nome: String, m: Vector2) -> void:
+	var mp := _maniglie_pezzo()
+	var e: Dictionary = mp["e"]
+	_pz_avvio = {"c": mp["c"], "rot": mp["rot"], "m": m, "k": mp["k"], "punti": mp["punti"], "copia": e.duplicate(true),
+		"v": (m - Vector2(mp["c"])).rotated(-float(mp["rot"]))}
+	_trascina = nome
+	_mosso = false
+
+func _muovi_maniglia_pezzo(m: Vector2, ctrl: bool) -> void:
+	var t := progetto.trova(selezionato)
+	if t.is_empty() or _pz_avvio.is_empty():
+		return
+	if not _mosso:
+		progetto.inizia_trascinamento()
+		_mosso = true
+	var k: String = _pz_avvio["k"]
+	var e: Dictionary = progetto.desc[t[0]][t[1]]
+	e.clear()
+	e.merge(Dictionary(_pz_avvio["copia"]).duplicate(true))
+	var c: Vector2 = _pz_avvio["c"]
+	var rot := float(_pz_avvio["rot"])
+	var v: Vector2 = (m - c).rotated(-rot)
+	var v0: Vector2 = _pz_avvio["v"]
+	match _trascina:
+		"pz_ruota":
+			var passo := deg_to_rad(15.0 if ctrl else 1.0)
+			var giro := wrapf((m - c).angle() - (Vector2(_pz_avvio["m"]) - c).angle(), -PI, PI)
+			# per i pezzi con un angolo si arrotonda l'angolo finale (0°, 1°, 2°… o 15°, 30°…)
+			var giro_ok := snappedf(rot + giro, passo) - rot if not bool(_pz_avvio["punti"]) else snappedf(giro, passo)
+			if absf(giro_ok) > 0.00001:
+				ProgettoEditor._ruota_pezzo(k, e, giro_ok)
+				if k in ["bersagli", "spinner", "cancelli", "captive"] and e.has("angolo"):
+					e["angolo"] = wrapf(float(e["angolo"]), -PI, PI)
+				if k == "inserti":
+					e["angolo_luce"] = wrapf(float(e["angolo_luce"]), -PI, PI)
+		"pz_angolo":
+			var f := clampf(maxf(v.length(), 2.0) / maxf(v0.length(), 2.0), 0.05, 20.0)
+			ProgettoEditor._scala_pezzo(k, e, f, c)
+			for campo in ["raggio", "raggio_y", "larghezza", "lunghezza"]:
+				if e.has(campo) and (e[campo] is float or e[campo] is int):
+					e[campo] = snappedf(maxf(float(e[campo]), 2.0), 0.5)
+			if e.get("dim") is Vector2:
+				e["dim"] = Vector2(e["dim"]).snapped(Vector2(0.5, 0.5)).max(Vector2(2, 2))
+		"pz_lato_x", "pz_lato_y":
+			var in_x := _trascina == "pz_lato_x"
+			var a := 0 if in_x else 1
+			var f2 := clampf(maxf(absf(v[a]), 2.0) / maxf(absf(v0[a]), 2.0), 0.05, 20.0)
+			stira_misura(k, e, in_x, f2, c, rot, bool(_pz_avvio["punti"]))
+	if k == "muri":
+		CurveEditor.rigenera(e)
+	elif k == "nastri":
+		CurveEditor.genera_nastri(progetto.desc)
+	queue_redraw()
+
+## v0.29: rapporto fra la distanza del mouse dal centro (lungo x o y dell'immagine) adesso e all'inizio.
+func _rapporto_img(m: Vector2, asse: int) -> float:
+	if _img_avvio.is_empty():
+		return 1.0
+	var v: Vector2 = (m - Vector2(_img_avvio["c"])).rotated(-float(_img_avvio["rot"]))
+	var v0: Vector2 = _img_avvio["v"]
+	return maxf(absf(v[asse]), 2.0) / maxf(absf(v0[asse]), 2.0)
 
 func centra_su(m: Vector2) -> void:
 	origine = size * 0.5 - m * scala
@@ -221,6 +452,7 @@ func _disegna_telefono() -> void:
 	draw_string(_font, r.position + Vector2(4, -10), "📱 telefono %s" % ("20:9" if anteprima_tel > 1500.0 else "16:9"), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.85, 0.85, 0.9))
 
 func _draw() -> void:
+	_aggiorna_scorrimento()
 	draw_rect(Rect2(Vector2.ZERO, size), C_SFONDO)
 	if progetto == null or progetto.desc.is_empty():
 		draw_string(_font, Vector2(30, 60), "Nessun tavolo aperto: premi NUOVO o APRI", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.8, 0.8, 0.8))
@@ -650,19 +882,149 @@ func _maniglia_in(m: Vector2) -> String:
 	var mi := _maniglie_immagine()
 	if mi.is_empty():
 		return ""
-	if px(m).distance_to(px(mi[4])) < 10.0:
+	if px(m).distance_to(_pm(mi[4])) < 10.0:
 		return "ruota"
-	if px(m).distance_to(px(mi[1])) < 9.0:
+	if px(m).distance_to(_pm(mi[1])) < 9.0:
 		return "angolo"
-	if px(m).distance_to(px(mi[8])) < 9.0:
+	if px(m).distance_to(_pm(mi[8])) < 9.0:
 		return "lato_x"
-	if px(m).distance_to(px(mi[9])) < 9.0:
+	if px(m).distance_to(_pm(mi[9])) < 9.0:
 		return "lato_y"
-	if px(m).distance_to(px(mi[0])) < 9.0:
+	if px(m).distance_to(_pm(mi[0])) < 9.0:
 		return "centro"
 	return ""
 
+func _disegna_maniglie_pezzo() -> void:
+	var mp := _maniglie_pezzo()
+	if mp.is_empty():
+		return
+	var col := Color(1.0, 0.85, 0.25)
+	var rot := float(mp["rot"])
+	var c := px(mp["c"])
+	var mz: Vector2 = Vector2(mp["mezza"]) * scala + Vector2(12, 12)
+	draw_set_transform_matrix(Transform2D(rot, c))
+	draw_rect(Rect2(-mz, mz * 2.0), Color(col, 0.45), false, 1.0)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+	if mp["ruota"] != null:
+		var pr := _pm(mp["ruota"])
+		draw_line(_vis(c + Vector2(0, -mz.y).rotated(rot)), pr, Color(col, 0.8), 1.5)
+		draw_circle(pr, 7.0, col)
+		draw_arc(pr, 4.0, 0.3, 4.8, 10, Color(0.15, 0.1, 0.0), 1.5)
+		if _trascina == "pz_ruota":
+			var gradi := rad_to_deg(float(mp["e"].get("angolo_luce" if mp["k"] == "inserti" else "angolo", 0.0)))
+			draw_string(_font, pr + Vector2(12, -6), "%.0f°" % gradi, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+	var pa := _pm(mp["angolo"])
+	draw_rect(Rect2(pa - Vector2(5, 5), Vector2(10, 10)), col)
+	draw_rect(Rect2(pa - Vector2(5, 5), Vector2(10, 10)), Color(0.15, 0.1, 0.0), false, 1.0)
+	for nome in ["lato_x", "lato_y"]:
+		if mp[nome] == null:
+			continue
+		var q := _pm(mp[nome])
+		var lungo := Vector2(3.5, 8.0) if nome == "lato_x" else Vector2(8.0, 3.5)
+		draw_set_transform_matrix(Transform2D(rot, q))
+		draw_rect(Rect2(-lungo, lungo * 2.0), Color.WHITE)
+		draw_rect(Rect2(-lungo, lungo * 2.0), col, false, 1.5)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+	if _trascina in ["pz_angolo", "pz_lato_x", "pz_lato_y"]:
+		var mis: Vector2 = Vector2(mp["mezza"]) * 2.0
+		draw_string(_font, pa + Vector2(-70, -14), "%.0f × %.0f mm" % [mis.x, mis.y], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+
+## v0.29: il muro più vicino al punto (entro 12 px), con dove cadrebbe il varco. {} se non c'è.
+func varco_sotto(m: Vector2) -> Dictionary:
+	var meglio := {}
+	for e in progetto.desc.get(varco_su, []):
+		if _non_sceglibile(varco_su, e) or not e.has("controllo"):
+			continue
+		var v := ProgettoEditor.trova_varco_piano(e, m, varco_larghezza) if varco_su == "piani" else ProgettoEditor.trova_varco(e, m, varco_larghezza)
+		if not v.is_empty() and float(v["dist"]) * scala < 12.0 and (meglio.is_empty() or float(v["dist"]) < float(meglio["dist"])):
+			v["id"] = e["id"]
+			meglio = v
+	return meglio
+
+func _fai_varco(m: Vector2) -> void:
+	var v := varco_sotto(m)
+	if v.is_empty():
+		messaggio.emit("✂ Clicca SOPRA %s (la parte rossa è quella che si toglie). Esc per smettere." % ("il bordo di un piano" if varco_su == "piani" else "un muro"))
+		return
+	var r := progetto.esegui({"comando": "varco", "id": v["id"], "pos": m, "larghezza": varco_larghezza, "metti": varco_metti})
+	messaggio.emit(r["messaggio"])
+	if r.get("ok", false):
+		da_inserire = ""
+		_varco_mouse = Vector2(-9999, -9999)
+		var nuovo := str(r.get("id", ""))
+		seleziona(nuovo if nuovo != "" else (str(r["muri"][0]) if not r.get("muri", []).is_empty() else str(r.get("piano", ""))))
+		selezione_cambiata.emit(selezionato)
+	queue_redraw()
+
+func _disegna_varco() -> void:
+	if da_inserire != "varco" or _varco_mouse.x < -9000:
+		return
+	var v := varco_sotto(_varco_mouse)
+	if v.is_empty():
+		return
+	var linea: PackedVector2Array = v["linea"]
+	var lp := PackedVector2Array()
+	for q in linea:
+		lp.append(px(q))
+	if lp.size() >= 2:
+		draw_polyline(lp, Color(1.0, 0.2, 0.2, 0.9), 7.0)
+	var a := px(v["a"])
+	var b := px(v["b"])
+	for q in [a, b]:
+		draw_circle(q, 4.0, Color.WHITE)
+	if varco_metti != "" and varco_su == "muri":
+		draw_line(a, b, Color(0.4, 1.0, 0.5), 2.0)
+	if varco_metti != "" and varco_su == "piani" and v.has("fuori"):
+		# anteprima del pezzo attaccato: freccia verde verso fuori (scende) o verso dentro (sale)
+		var mm0: Vector2 = (Vector2(v["a"]) + Vector2(v["b"])) * 0.5
+		var fu: Vector2 = v["fuori"]
+		var p0 := px(mm0 - fu * 25.0)
+		var p1 := px(mm0 + fu * 170.0)
+		draw_line(p0, p1, Color(0.4, 1.0, 0.5, 0.8), 3.0)
+		var punta := p1 if varco_metti.ends_with("_giu") else p0
+		var dirp := (p1 - p0).normalized() * (1.0 if varco_metti.ends_with("_giu") else -1.0)
+		draw_colored_polygon(PackedVector2Array([punta + dirp * 10.0, punta + dirp.orthogonal() * 7.0, punta - dirp.orthogonal() * 7.0]), Color(0.4, 1.0, 0.5))
+	draw_string(_font, (a + b) * 0.5 + Vector2(10, -10), "%.0f mm" % Vector2(v["a"]).distance_to(v["b"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+
+## v0.30: SEGNALINI DEGLI INCROCI. ⬆ = uno passa sopra l'altro (ponte), ✚ = stessa altezza, ! = conflitto da decidere,
+## ? = nessuna regola (altezze come disegnate). Bordo giallo = scelta a mano; arancio = bloccato.
+func incrocio_in(m: Vector2) -> String:
+	for v in progetto.desc.get("_incroci", []):
+		if px(m).distance_to(px(v["pos"])) < 11.0:
+			return str(v["chiave"])
+	return ""
+
+func _disegna_incroci() -> void:
+	for v in progetto.desc.get("_incroci", []):
+		var c := px(v["pos"])
+		var modo := str(v.get("modo", ""))
+		var confl := str(v.get("conflitto", "")) != ""
+		var fondo := Color(0.85, 0.2, 0.2) if confl else (Color(0.35, 0.35, 0.4) if modo == "" else (Color(0.2, 0.55, 0.95) if not modo in ["stesso", "unito"] else (Color(0.2, 0.75, 0.45) if modo == "stesso" else Color(0.75, 0.4, 0.95))))
+		var scelto := str(v["chiave"]) == incrocio_scelto
+		draw_circle(c, 10.0 if scelto else 8.5, fondo)
+		var bordo := Color(1.0, 0.6, 0.15) if bool(v.get("bloccato", false)) else (Color(1.0, 0.9, 0.2) if str(v.get("da", "")) == "incrocio" else Color(1, 1, 1, 0.85))
+		draw_arc(c, 10.0 if scelto else 8.5, 0, TAU, 24, bordo, 2.5 if scelto else 1.5)
+		var w := Color.WHITE
+		if confl:
+			draw_line(c + Vector2(0, -5), c + Vector2(0, 1.5), w, 2.0)
+			draw_circle(c + Vector2(0, 4.5), 1.3, w)
+		elif modo == "unito":
+			draw_line(c + Vector2(-5, -2), c + Vector2(5, -2), w, 1.5)
+			draw_line(c + Vector2(5, -2), c + Vector2(2, -5), w, 1.5)
+			draw_line(c + Vector2(-5, 2), c + Vector2(5, 2), w, 1.5)
+			draw_line(c + Vector2(-5, 2), c + Vector2(-2, 5), w, 1.5)
+		elif modo == "stesso":
+			draw_line(c + Vector2(-5, 0), c + Vector2(5, 0), w, 2.0)
+			draw_line(c + Vector2(0, -5), c + Vector2(0, 5), w, 2.0)
+		elif modo != "":
+			draw_colored_polygon(PackedVector2Array([c + Vector2(0, -6), c + Vector2(5, 1), c + Vector2(-5, 1)]), w)
+			draw_line(c + Vector2(-5, 4), c + Vector2(5, 4), w, 1.5)
+		else:
+			draw_string(_font, c + Vector2(-3.5, 4.5), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, w)
+
 func _disegna_selezione() -> void:
+	_disegna_incroci()
+	_disegna_varco()
 	var mb := _maniglie_buca()
 	if not mb.is_empty():
 		var cb := px(mb["e"]["pos"])
@@ -676,34 +1038,35 @@ func _disegna_selezione() -> void:
 			draw_arc(u, 9.0, 0, TAU, 20, Color(0.8, 0.5, 1.0), 2.0)
 			draw_line(u - Vector2(12, 0), u + Vector2(12, 0), Color(0.8, 0.5, 1.0), 1.5)
 			draw_line(u - Vector2(0, 12), u + Vector2(0, 12), Color(0.8, 0.5, 1.0), 1.5)
+	_disegna_maniglie_pezzo()
 	var mi := _maniglie_immagine()
 	if not mi.is_empty():
-		var c0 := px(mi[0])
+		var c0 := _pm(mi[0])
 		# v0.27: contorno dell'immagine e pallino di rotazione (trascinalo in cerchio; Ctrl = scatti di 15°)
 		var dim_i: Vector2 = Vector2(mi[2].get("dim", Vector2(100, 100)) if mi[5] else mi[2]["immagine"].get("dim", Vector2(40, 40)))
-		draw_set_transform_matrix(Transform2D(float(mi[6]), c0))
+		draw_set_transform_matrix(Transform2D(float(mi[6]), px(mi[0])))
 		draw_rect(Rect2(-dim_i * 0.5 * scala, dim_i * scala), Color(0.3, 0.85, 1.0, 0.6), false, 1.0)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
-		var pr := px(mi[4])
-		var cima := px(Vector2(mi[0]) + Vector2(0, -dim_i.y * 0.5).rotated(float(mi[6])))
+		var pr := _pm(mi[4])
+		var cima := _vis(px(Vector2(mi[0]) + Vector2(0, -dim_i.y * 0.5).rotated(float(mi[6]))))
 		draw_line(cima, pr, Color(0.3, 0.85, 1.0, 0.8), 1.5)
 		draw_circle(pr, 7.0, Color(0.3, 0.85, 1.0))
 		draw_arc(pr, 4.0, 0.3, 4.8, 10, Color(0.05, 0.1, 0.2), 1.5)
 		if _trascina == "img_ruota":
 			draw_string(_font, pr + Vector2(12, -6), "%.0f°" % rad_to_deg(float(mi[6])), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
 		draw_colored_polygon(PackedVector2Array([c0 + Vector2(0, -7), c0 + Vector2(7, 0), c0 + Vector2(0, 7), c0 + Vector2(-7, 0)]), Color(0.3, 0.85, 1.0))
-		draw_rect(Rect2(px(mi[1]) - Vector2(5, 5), Vector2(10, 10)), Color(0.3, 0.85, 1.0))
+		draw_rect(Rect2(_pm(mi[1]) - Vector2(5, 5), Vector2(10, 10)), Color(0.3, 0.85, 1.0))
 		# v0.28: maniglie sui lati = allunga solo in larghezza (destra) o solo in altezza (sotto)
 		for j in [8, 9]:
-			var q := px(mi[j])
+			var q := _pm(mi[j])
 			var lungo := Vector2(3.5, 8.0) if j == 8 else Vector2(8.0, 3.5)
 			draw_set_transform_matrix(Transform2D(float(mi[6]), q))
 			draw_rect(Rect2(-lungo, lungo * 2.0), Color(1.0, 1.0, 1.0))
 			draw_rect(Rect2(-lungo, lungo * 2.0), Color(0.3, 0.85, 1.0), false, 1.5)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 		if _trascina in ["img_lato_x", "img_lato_y", "img_stira_x", "img_stira_y"]:
-			draw_string(_font, px(mi[1]) + Vector2(10, 16), "%.0f × %.0f mm" % [dim_i.x, dim_i.y], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
-		draw_line(c0, px(mi[1]), Color(0.3, 0.85, 1.0, 0.5), 1.0)
+			draw_string(_font, _pm(mi[1]) + Vector2(-60, -14), "%.0f × %.0f mm" % [dim_i.x, dim_i.y], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+		draw_line(c0, _pm(mi[1]), Color(0.3, 0.85, 1.0, 0.5), 1.0)
 	if _rett_da.x >= 0.0:
 		var r := Rect2(px(_rett_da), px(_ultimo_mm) - px(_rett_da)).abs()
 		draw_rect(r, Color(1, 0.9, 0.2, 0.12))
@@ -756,7 +1119,7 @@ func _disegna_problemi() -> void:
 		var pos: Vector2 = p["pos"]
 		if pos.x < -900.0:
 			continue                    # problema senza posto sul tavolo (es. una missione)
-		var c := Color(1.0, 0.2, 0.2) if p["livello"] == "errore" else Color(1.0, 0.55, 0.1)
+		var c := Color(1.0, 0.2, 0.2) if p["livello"] == "errore" else (Color(0.4, 0.75, 1.0) if p["livello"] == "info" else Color(1.0, 0.55, 0.1))
 		if p.has("a"):
 			draw_line(px(p["a"]), px(p["b"]), c, 3.0)
 		draw_arc(px(pos), 9.0, 0, TAU, 20, c, 2.5)
@@ -845,7 +1208,8 @@ func _pezzo_immagine_in(m: Vector2, anche_bloccati := false) -> String:
 			var deco: bool = k == "decorazioni"
 			var c: Vector2 = Vector2(e["pos"]) if deco else PittorePezzi.ancora(k, e, progetto.desc) + Vector2(im.get("pos", Vector2.ZERO))
 			var loc: Vector2 = (m - c).rotated(-float(e.get("angolo", 0.0) if deco else im.get("rot", 0.0)))
-			var mz: Vector2 = Vector2(im.get("dim", Vector2(40, 40))) * 0.5
+			# v0.29: per l'immagine sul piano conta la misura DISEGNATA (dim del pezzo), non quella salvata nell'immagine
+			var mz: Vector2 = Vector2(e.get("dim", Vector2(100, 100)) if deco else im.get("dim", Vector2(40, 40))) * 0.5
 			if absf(loc.x) <= mz.x and absf(loc.y) <= mz.y:
 				return e["id"]
 	return ""
@@ -968,6 +1332,9 @@ func _gui_input(ev: InputEvent) -> void:
 	if ev is InputEventMouseMotion:
 		var m := mm(ev.position)
 		posizione_mouse.emit(m)
+		if da_inserire == "varco":
+			_varco_mouse = m
+			queue_redraw()
 		if _trascina == "vista":
 			origine += ev.relative
 			queue_redraw()
@@ -1006,6 +1373,8 @@ func _gui_input(ev: InputEvent) -> void:
 				elif t[0] == "nastri":
 					CurveEditor.genera_nastri(progetto.desc)
 				queue_redraw()
+		elif _trascina.begins_with("pz_"):
+			_muovi_maniglia_pezzo(m, ev.ctrl_pressed)
 		elif _trascina in ["img_freccia", "img_uscita"]:
 			var mb2 := _maniglie_buca()
 			if not mb2.is_empty():
@@ -1029,6 +1398,12 @@ func _gui_input(ev: InputEvent) -> void:
 				var im: Dictionary = mi[2]["immagine"]
 				if _trascina == "img_ruota":
 					var nuovo := angolo_rotazione(mi[0], m, ev.ctrl_pressed)
+					if not _img_avvio.is_empty():
+						# v0.29: gira di quanto è girato il mouse intorno al centro (anche se il pallino era riportato dentro)
+						var cc0: Vector2 = _img_avvio["c"]
+						var giro := (m - cc0).angle() - (Vector2(_img_avvio["m"]) - cc0).angle()
+						var passo_r := deg_to_rad(15.0 if ev.ctrl_pressed else 1.0)
+						nuovo = wrapf(snappedf(float(_img_avvio["rot"]) + giro, passo_r), -PI, PI)
 					var delta := wrapf(nuovo - float(mi[6]), -PI, PI)
 					if absf(delta) > 0.0001:
 						if mi[5]:
@@ -1045,6 +1420,10 @@ func _gui_input(ev: InputEvent) -> void:
 					var dimt: Vector2 = im.get("dim", Vector2(40, 40))
 					var vt: Vector2 = (m - Vector2(mi[0])).rotated(-float(mi[6]))
 					var ft := clampf(maxf(absf(vt.x) * 2.0, 6.0) / maxf(dimt.x, 0.1), 0.8, 1.25)
+					if not _img_avvio.is_empty():
+						var d0t: Vector2 = _img_avvio["dim_e"] if mi[5] else _img_avvio["dim_im"]
+						var dnt: Vector2 = Vector2(mi[2].get("dim", dimt)) if mi[5] else dimt
+						ft = clampf(d0t.x * _rapporto_img(m, 0) / maxf(dnt.x, 0.1), 0.8, 1.25)
 					if absf(ft - 1.0) > 0.002:
 						ProgettoEditor._scala_pezzo(tt[0], mi[2], ft, ProgettoEditor.centro(tt[0], mi[2]))
 						if mi[5]:
@@ -1059,6 +1438,9 @@ func _gui_input(ev: InputEvent) -> void:
 					var dims: Vector2 = Vector2(mi[2].get("dim", Vector2(100, 100))) if mi[5] else Vector2(im.get("dim", Vector2(40, 40)))
 					var vl: Vector2 = (m - Vector2(mi[0])).rotated(-float(mi[6]))
 					var nuova := maxf((absf(vl.x) if in_x else absf(vl.y)) * 2.0, 4.0)
+					if not _img_avvio.is_empty():
+						var d0l: Vector2 = _img_avvio["dim_e"] if mi[5] else _img_avvio["dim_im"]
+						nuova = maxf((d0l.x if in_x else d0l.y) * _rapporto_img(m, 0 if in_x else 1), 4.0)
 					var fl := nuova / maxf(dims.x if in_x else dims.y, 0.1)
 					if absf(fl - 1.0) > 0.002:
 						var fv := Vector2(fl, 1.0) if in_x else Vector2(1.0, fl)
@@ -1079,6 +1461,8 @@ func _gui_input(ev: InputEvent) -> void:
 					var verso: Vector2 = (m - Vector2(mi[0])).rotated(-float(mi[6]))
 					# l'angolo segue il mouse in orizzontale; l'altezza segue (proporzioni mantenute)
 					var f := maxf(absf(verso.x) * 2.0, 4.0) / maxf(dim0.x, 0.1)
+					if not _img_avvio.is_empty():
+						f = maxf(Vector2(_img_avvio["dim_im"]).x * _rapporto_img(m, 0), 4.0) / maxf(dim0.x, 0.1)
 					im["dim"] = (dim0 * f).snapped(Vector2(0.5, 0.5))
 				queue_redraw()
 		elif _trascina == "punto":
@@ -1131,6 +1515,9 @@ func _gui_input(ev: InputEvent) -> void:
 				_ultimo_mm = m2
 				_trascina = "traccia"
 				return
+			if da_inserire == "varco":
+				_fai_varco(m2)
+				return
 			if da_inserire != "":
 				_inserisci(_aggancia(m2), ev.double_click, ev.shift_pressed)
 				return
@@ -1149,7 +1536,24 @@ func _gui_input(ev: InputEvent) -> void:
 						var r2 := progetto.esegui({"comando": "aggiungi_punto", "id": selezionato, "dopo": migliore, "pos": _aggancia(m2)})
 						messaggio.emit(r2["messaggio"])
 						return
+			# v0.30: clic su un segnalino d'incrocio = si apre il suo pannello
+			var inc_cl := incrocio_in(m2) if da_inserire == "" else ""
+			if inc_cl != "":
+				incrocio_scelto = inc_cl
+				selezionati = []
+				selezionato = ""
+				selezione_cambiata.emit("")
+				queue_redraw()
+				return
+			if incrocio_scelto != "":
+				incrocio_scelto = ""
+			var man_pz := _maniglia_pezzo_in(m2) if not ev.shift_pressed else ""
+			if man_pz != "":
+				_inizia_maniglia_pezzo(man_pz, m2)
+				return
 			var man := _maniglia_in(m2)
+			if man in ["ruota", "angolo", "lato_x", "lato_y"]:
+				_foto_immagine(m2)
 			if man == "ruota":
 				_trascina = "img_ruota"
 				_mosso = false
@@ -1248,6 +1652,10 @@ func _gui_input(ev: InputEvent) -> void:
 			if _trascina.begins_with("img_") and _mosso:
 				progetto.fine_trascinamento()
 				messaggio.emit({"img_tutto": "Elemento ridimensionato (immagine e collisione insieme)", "img_centro": "Solo l'immagine spostata", "img_angolo": "Immagine ridimensionata", "img_ruota": "Immagine ruotata (Ctrl = scatti di 15°)", "img_lato_x": "Immagine allargata/stretta", "img_lato_y": "Immagine allungata/accorciata", "img_stira_x": "Elemento allargato/stretto (immagine e collisione)", "img_stira_y": "Elemento allungato/accorciato (immagine e collisione)", "img_freccia": "Direzione d'uscita cambiata", "img_uscita": "Punto d'uscita spostato"}.get(_trascina, "Fatto"))
+				selezione_cambiata.emit(selezionato)
+			if _trascina.begins_with("pz_") and _mosso:
+				progetto.fine_trascinamento()
+				messaggio.emit({"pz_ruota": "Pezzo ruotato (Ctrl = scatti di 15°)", "pz_angolo": "Pezzo ingrandito/rimpicciolito", "pz_lato_x": "Pezzo allargato/stretto", "pz_lato_y": "Pezzo allungato/accorciato"}.get(_trascina, "Fatto"))
 				selezione_cambiata.emit(selezionato)
 			if _trascina in ["pezzo", "punto"] and _mosso:
 				progetto.fine_trascinamento()

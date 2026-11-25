@@ -57,12 +57,15 @@ static func genera(desc: Dictionary) -> void:
 				desc["muri"] = []
 			desc["muri"].append({"id": "%s@fianco" % p["id"], "punti": PackedVector2Array(zona), "tipo": "metallo", "livello": 0,
 				"pieno": true, "da_piano": p["id"]})
+		# rampa»): il bordo si spezza dove ci sono i varchi, e da lì la pallina può scendere (o entrare nella rampa).
+		var estremi := estremi_varchi(p)
+		desc["livelli"][n]["varchi"] = estremi
 		if not bool(p.get("bordo_aperto", false)):
-			var giro := PackedVector2Array(zona)
-			giro.append(zona[0])
 			if not desc.get("muri") is Array:
 				desc["muri"] = []
-			desc["muri"].append({"id": "%s@bordo" % p["id"], "punti": giro, "tipo": "metallo", "livello": n, "altezza": 16.0, "da_piano": p["id"]})
+			var pezzi := bordo_spezzato(p)
+			for q in pezzi.size():
+				desc["muri"].append({"id": "%s@bordo%s" % [p["id"], "" if q == 0 else str(q + 1)], "punti": pezzi[q], "tipo": "metallo", "livello": n, "altezza": 16.0, "da_piano": p["id"]})
 	# 3) i pezzi dentro un piano salgono sul piano (solo quelli messi a mano restano come sono)
 	for k in LIVELLABILI:
 		for e in desc.get(k, []):
@@ -176,6 +179,126 @@ static func collega_rampe(desc: Dictionary) -> void:
 				if b is Dictionary and Vector2(fine.x, fine.y).distance_to(b["pos"]) < float(b.get("raggio", 14.0)) + 6.0 and str(b.get("tipo", "")) in ["tiene", "prigione"]:
 					r["finisce_in"] = b["id"]
 					r["finisce_auto"] = true
+
+## ---------------------------------------------------------------- v0.29: VARCHI NEL BORDO DEL PIANO
+## p["varchi"] = [{"t": dove (0-1 lungo il giro del bordo, dal primo punto), "larghezza": mm}]. La posizione è una
+## frazione del giro, così se cambi la forma del piano il varco resta più o meno nello stesso punto.
+
+## Il giro chiuso del bordo (primo punto ripetuto in fondo).
+static func giro(p: Dictionary) -> PackedVector2Array:
+	var pts := PackedVector2Array(p.get("punti", PackedVector2Array()))
+	if pts.size() > 3 and pts[0].distance_to(pts[pts.size() - 1]) < 0.5:
+		pts.remove_at(pts.size() - 1)
+	if pts.size() < 3:
+		return PackedVector2Array()
+	pts.append(pts[0])
+	return pts
+
+static func lunghezza(linea: PackedVector2Array) -> float:
+	var l := 0.0
+	for k in linea.size() - 1:
+		l += linea[k].distance_to(linea[k + 1])
+	return l
+
+## Tratti tolti, in mm lungo il giro: [[s1, s2], …] (s2 può superare la lunghezza: il varco passa dal primo punto).
+static func tagli(p: Dictionary) -> Array:
+	var g := giro(p)
+	var tot := lunghezza(g)
+	var out: Array = []
+	if tot <= 0.0:
+		return out
+	for v in p.get("varchi", []):
+		if not v is Dictionary:
+			continue
+		var mezzo := minf(float(v.get("larghezza", 50.0)), tot * 0.9) * 0.5
+		var s := fposmod(float(v.get("t", 0.0)), 1.0) * tot
+		out.append([s - mezzo, s + mezzo])
+	return out
+
+## Punto a distanza s (mm) lungo il giro, che si ripete (s fuori da 0..tot gira intorno).
+static func punto_giro(g: PackedVector2Array, s: float) -> Vector2:
+	var tot := lunghezza(g)
+	s = fposmod(s, maxf(tot, 0.001))
+	return ProgettoEditor._punto_a(g, s)
+
+## Estremi dei varchi [[a, b], …] (per la fisica: da lì la pallina può uscire dal piano).
+static func estremi_varchi(p: Dictionary) -> Array:
+	var g := giro(p)
+	var out: Array = []
+	for tg in tagli(p):
+		out.append([punto_giro(g, tg[0]), punto_giro(g, tg[1])])
+	return out
+
+## Il bordo senza i varchi: uno o più pezzi di linea, ognuno in ordine lungo il giro (angoli compresi).
+static func bordo_spezzato(p: Dictionary) -> Array:
+	var g := giro(p)
+	if g.size() < 2:
+		return []
+	var tg := tagli(p)
+	if tg.is_empty():
+		return [g]
+	var tot := lunghezza(g)
+	var cum: Array = [0.0]
+	for k in g.size() - 1:
+		cum.append(float(cum[k]) + g[k].distance_to(g[k + 1]))
+	var tolti: Array = []
+	for t in tg:
+		tolti.append([float(t[0]), float(t[1])])
+	tolti.sort_custom(func(x, y): return x[0] < y[0])
+	var out: Array = []
+	for i in tolti.size():
+		# dal fondo di un varco all'inizio del successivo (l'ultimo fa il giro e arriva al primo)
+		var da: float = tolti[i][1]
+		var a: float = tolti[(i + 1) % tolti.size()][0] + (tot if i == tolti.size() - 1 else 0.0)
+		if a - da <= 1.0:
+			continue
+		var punti_s: Array = []
+		for giri in [-tot, 0.0, tot, 2.0 * tot]:
+			for k in g.size() - 1:
+				var sk: float = float(cum[k]) + giri
+				if sk > da + 0.01 and sk < a - 0.01:
+					punti_s.append([sk, g[k]])
+		punti_s.sort_custom(func(x, y): return x[0] < y[0])
+		var linea := PackedVector2Array([punto_giro(g, da)])
+		for q in punti_s:
+			linea.append(q[1])
+		linea.append(punto_giro(g, a))
+		out.append(linea)
+	return out
+
+## v0.30: VARCHI PROPOSTI. Dove una rampa (o un nastro sollevato) che sale su questo piano o ne scende attraversa il
+## bordo chiuso e lì non c'è ancora un varco: [{"pos", "t" (0-1 sul giro), "rampa": id}]. L'editor li propone, il
+## progettista li conferma (e poi può spostarli o chiuderli).
+static func varchi_proposti(desc: Dictionary, p: Dictionary) -> Array:
+	var out: Array = []
+	if bool(p.get("bordo_aperto", false)):
+		return out
+	var n := int(p.get("livello", 0))
+	var g := giro(p)
+	if n <= 0 or g.size() < 4:
+		return out
+	var tot := lunghezza(g)
+	var gia := estremi_varchi(p)
+	for r in desc.get("rampe", []):
+		if not r is Dictionary or (int(r.get("livello", 0)) != n and int(r.get("livello_fine", 0)) != n):
+			continue
+		var linea: Array = Binario.levigato(r.get("punti", []).map(func(q): return Vector3(q.x, q.y, q.z)))
+		for i in linea.size() - 1:
+			var acc := 0.0
+			for k in g.size() - 1:
+				var x = Geometry2D.segment_intersects_segment(Vector2(linea[i].x, linea[i].y), Vector2(linea[i + 1].x, linea[i + 1].y), g[k], g[k + 1])
+				if x != null:
+					var coperto := false
+					for v in gia:
+						if Geometry2D.get_closest_point_to_segment(x, v[0], v[1]).distance_to(x) < 20.0:
+							coperto = true
+					for o in out:
+						if Vector2(o["pos"]).distance_to(x) < 30.0:
+							coperto = true
+					if not coperto:
+						out.append({"pos": x, "t": fposmod((acc + g[k].distance_to(x)) / maxf(tot, 0.001), 1.0), "rampa": str(r.get("da_nastro", r["id"]))})
+				acc += g[k].distance_to(g[k + 1])
+	return out
 
 ## Livello del piano che contiene il punto (0 = tavolo). Se i piani si sovrappongono vince l'ultimo.
 static func livello_in(zone: Array, q: Vector2) -> int:
